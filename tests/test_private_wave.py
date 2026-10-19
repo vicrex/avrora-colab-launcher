@@ -14,16 +14,26 @@ spec.loader.exec_module(m)
 
 
 class PrivateWaveTest(unittest.TestCase):
-    def test_manifest_never_accepts_urls_or_extra_fields(self):
-        def b64(obj):
-            return base64.b64encode(json.dumps(obj).encode()).decode()
-        good=m.manifest_from_secret(b64({"csv_file_id":"A"*20,"zip_file_id":"B"*20}))
-        self.assertEqual(len(good),2)
-        for bad in ({"csv_file_id":"https://drive.google.com/123","zip_file_id":"B"*20},
-                    {"csv_file_id":"A"*20,"zip_file_id":"A"*20},
-                    {"csv_file_id":"A"*20,"zip_file_id":"B"*20,"holdout":"1"}):
+    def test_source_discovery_requires_exactly_one_match(self):
+        class Response:
+            def __init__(self, obj, status=200):
+                self.obj, self.status_code = obj, status
+            def json(self):
+                return self.obj
+        class Session:
+            def __init__(self, result):
+                self.result = result
+            def get(self, url, params=None, timeout=None):
+                assert url.endswith("/drive/v3/files")
+                assert params["q"].startswith("name = '")
+                return Response(self.result)
+        name = m.PRIVATE_SOURCE_NAMES["csv"]
+        one = {"files":[{"id":"1234567890123456","name":name}]}
+        self.assertEqual(m.discover_drive_id(Session(one),name),"1234567890123456")
+        for bad in ({"files":[]}, {"files":one["files"]*2},
+                    {"files":one["files"], "nextPageToken":"more"}):
             with self.assertRaises(ValueError):
-                m.manifest_from_secret(b64(bad))
+                m.discover_drive_id(Session(bad),name)
 
     def test_hash_rejects_unverified_inputs(self):
         with self.assertRaises(ValueError):
