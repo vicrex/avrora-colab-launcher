@@ -51,7 +51,10 @@ class HourlyWaveTests(unittest.TestCase):
         self.assertEqual(t["reason"],"STOP_FIRST")
         self.assertEqual(t["exit"],90.0)
         self.assertLess(t["net25"],t["net20"])
-        bars[20]=(20*900000,87.0,100.0,85.0,91.0)
+        # The entry must be on the correct side of the stop; a later bar
+        # gaps beyond the stop and receives the worse opening price.
+        bars[20]=(20*900000,100.0,101.0,99.0,100.0)
+        bars[21]=(21*900000,87.0,89.0,85.0,88.0)
         gap=m.simulate_one(bars,s,p)
         self.assertEqual(gap["reason"],"GAP_STOP")
         self.assertEqual(gap["exit"],87.0)
