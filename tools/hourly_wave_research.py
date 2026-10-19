@@ -302,8 +302,32 @@ def verify_receipt(text, m, candidate_id):
     if receipt.get("status") not in ("PASS_REPRODUCIBLE_DISCOVERY","PASS_NO_TRADES"):
         raise ValueError("BLOCKED_UNAPPROVED_STATUS")
     for field in ("closed_trades","proposals"):
-        if not isinstance(receipt.get(field),int) or receipt[field]<0:
+        if type(receipt.get(field)) is not int or receipt[field]<0:
             raise ValueError("BLOCKED_INVALID_METRIC")
+    n=receipt["closed_trades"]
+    if n>receipt["proposals"]:
+        raise ValueError("BLOCKED_MORE_TRADES_THAN_SIGNALS")
+    if receipt["status"]!=("PASS_REPRODUCIBLE_DISCOVERY" if n else "PASS_NO_TRADES"):
+        raise ValueError("BLOCKED_RECEIPT_STATUS_INCONSISTENT")
+    for field in ("net20_usdt","net25_usdt","trades_per_symbol_day"):
+        v=receipt.get(field)
+        if type(v) not in (int,float) or not __import__("math").isfinite(v):
+            raise ValueError("BLOCKED_BAD_RECEIPT_METRIC_"+field)
+    pf=receipt.get("pf20")
+    if pf is not None and (type(pf) not in (int,float) or not __import__("math").isfinite(pf) or pf<0):
+        raise ValueError("BLOCKED_BAD_RECEIPT_PF")
+    if abs(receipt["trades_per_symbol_day"]-round(n/84,6))>0.00000001:
+        raise ValueError("BLOCKED_RECEIPT_FREQUENCY_MISMATCH")
+    if n==0 and (receipt["net20_usdt"]!=0 or receipt["net25_usdt"]!=0 or pf is not None):
+        raise ValueError("BLOCKED_EMPTY_LEDGER_ECONOMICS")
+    if receipt["net25_usdt"]>receipt["net20_usdt"]+0.00001:
+        raise ValueError("BLOCKED_STRESS_COSTS")
+    expected_review=(n>=30 and receipt["net20_usdt"]>0
+                     and receipt["net25_usdt"]>0 and pf is not None
+                     and pf>1.2 and n/84>=4)
+    expected_decision="RESEARCH_REVIEW_REQUIRED" if expected_review else "REJECT_DISCOVERY"
+    if receipt["decision"]!=expected_decision:
+        raise ValueError("BLOCKED_INCONSISTENT_RESEARCH_DECISION")
     receipt["receipt_sha256"]=digest
     return receipt
 
