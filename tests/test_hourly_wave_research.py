@@ -103,6 +103,8 @@ class HourlyWaveTests(unittest.TestCase):
         candidate=m0["candidates"][0]
         obj=dict(
             schema="AVRORA_FIVE_WAVE_DISCOVERY_RESULT_V1",
+            engine_sha256=m.sha(Path(m.__file__).read_bytes()),
+            checker_sha256=m.sha(Path(m.__file__).with_name("hourly_wave_check2.py").read_bytes()),
             status="PASS_NO_TRADES",
             promotion="RESEARCH_ONLY_NEVER_LIVE",
             candidate=candidate["id"],
