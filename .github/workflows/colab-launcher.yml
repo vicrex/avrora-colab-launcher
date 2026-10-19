@@ -56,7 +56,11 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check 'google-colab-cli==0.7.4'
           colab version
-          colab --auth=adc run smoke.py 2>&1 | tee remote-smoke.log
+          # Public repository: never stream remote Colab output into public logs.
+          if ! colab --auth=adc run smoke.py > remote-smoke.log 2>&1; then
+            echo 'REMOTE_COLAB_EXECUTION_FAILED (details withheld to protect credentials)'
+            exit 1
+          fi
           python tools/verify_receipt.py remote-smoke.log remote_receipt.json
           echo "AVRORA_REMOTE_COLAB_PASS"
       - name: Upload sanitized proof
