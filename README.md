@@ -1,84 +1,75 @@
-# AVRORA Colab Launcher
+# AVRORA public Colab launcher
 
-Public **CPU-only smoke runner**. It contains no private AVRORA source, trading signals, market datasets, Drive IDs, private reports, access tokens, or trading API keys. All jobs enforce REAL=OFF and HOLDOUT=SEALED.
+Safe, public CPU-only Google Colab smoke runner for the private AVRORA project. **No private AVRORA code, private Google Drive data, trading credentials or trading orders** are contained in this repository. All jobs run with `REAL=OFF` and `HOLDOUT=SEALED`.
 
-## Current capabilities
+## Deployment status
 
-- GitHub Actions manually starts an **offline** smoke test without credentials.
-- After *user-owned* Google ADC secret configuration, a separate manual mode can run the same harmless smoke in a remote Colab CPU session.
-- The schedule is `7 * * * *` (hourly at minute 07 UTC, subject to GitHub scheduling delays), but the job is **disabled** until repository variable `AVRORA_COLAB_AUTOSTART_ENABLED=true` is explicitly set. Do not enable that variable until authenticated remote smoke, evidence and Colab quota review pass.
+- Public GitHub Actions offline smoke was confirmed PASS, using free standard public repository runner.
+- GitHub schedule: **hourly at minute 07 UTC** (`7 * * * *`).
+- Remote Colab schedule remains **disabled** by repository variable `AVRORA_COLAB_AUTOSTART_ENABLED` (unset).
+- Remote Google authorization must be completed once, then **one manual remote smoke must pass** before enabling the unattended Colab schedule. No real remote Colab smoke is yet verified. Free Colab uptime/quotas are not guaranteed.
+- Existing separate AVRORA Google Apps Script timer is untouched.
 
-## Easiest one-time setup: Google Cloud Shell (no Windows installation)
+## One-time Google authorization — least-privileged trial
 
-This method uses the free Google Cloud Shell terminal in your browser and
-requires **two interactive authorizations by the account owner** (GitHub CLI and Google ADC).
-Do not hand the authorization code or credentials to an agent or paste them into chat.
+We discovered the original `gcloud auth application-default login` method requests a broad Google Cloud `cloud-platform` permission as well as Colab. **Do not authorize that broad request** just to launch Colab.
 
-1. Open https://shell.cloud.google.com/?show=terminal using the Google account intended for Colab. If Cloud Shell asks you to authorize access, review and approve the official Google prompt yourself.
-2. In the Cloud Shell terminal, run:
+An alternative one-time authorization script requests **only**:
+- `openid`
+- `https://www.googleapis.com/auth/userinfo.email`
+- `https://www.googleapis.com/auth/colaboratory`
 
-```bash
-git clone --depth 1 https://github.com/vicrex/avrora-colab-launcher.git
-cd avrora-colab-launcher
+This narrower method uses the public installed-app OAuth client bundled in Google's
+[google-colab-cli 0.7.4](https://github.com/googlecolab/google-colab-cli),
+and writes the approved refresh token as an encrypted GitHub Actions secret
+directly from a private temporary Cloud Shell file. It is **experimental**:
+while the restricted consent parameters and offline scope checks have been written,
+they still require real Google OAuth and remote Colab validation. The server may
+reject the narrower grant; if so, stop rather than silently broadening permissions.
+
+1. On your existing Google Cloud Shell terminal, **cancel** any pending broad
+   `Google Auth Library` consent and press **Ctrl+C** if the previous
+   `gcloud auth application-default login` is still awaiting a code.
+2. From the existing cloned repository directory run:
+
+```sh
+cd ~/avrora-colab-launcher
+git pull --ff-only
 bash tools/connect_cloud_shell.sh
 ```
 
-The script is published for review at
-[tools/connect_cloud_shell.sh](https://github.com/vicrex/avrora-colab-launcher/blob/main/tools/connect_cloud_shell.sh).
-It stops unless the GitHub CLI account is exactly **vicrex**, asks the user to
-authorize Google ADC with the four Colab scopes, validates but never prints ADC
-secret fields, and uploads the base64-encoded ADC JSON via a **pipe** to GitHub
-CLI, which encrypts it for the repository. It confirms **only the secret name**.
-The script does not run Colab, enable schedules, fetch private code, or trade.
-If `gh` is missing, install GitHub CLI through Cloud Shell's package manager
-before rerunning the script. Do not share terminal output containing authorization
-codes.
+3. The script confirms GitHub user `vicrex`, prepares a private Python environment,
+   prints a Google authorization URL, then asks for a one-time code
+   **with hidden terminal input**. Verify the consent page only requests
+   Colab and your email. If it shows broad Google Cloud or Drive access,
+   cancel; do not grant unexpected scopes.
+4. When successful it prints exactly
+   `SUCCESS: encrypted GitHub Actions secret name verified: AVRORA_COLAB_ADC_JSON_B64`.
+   The secret should appear by **name only** under
+   [Settings → Actions secrets](https://github.com/vicrex/avrora-colab-launcher/settings/secrets/actions).
+   Never paste codes, refresh tokens or ADC JSON into ChatGPT or an issue.
 
-3. Once the script reports **SUCCESS**, tell ChatGPT only `Готово`, without
-credentials or screenshots of authorization codes. The assistant can then
-run one **manual** `mode=colab` test and verify the remote, no-trading receipt.
+The GitHub CLI may store its account token on your Cloud Shell home directory:
+after setup, consider running `gh auth logout --hostname github.com`.
+The temporary Google ADC JSON is automatically erased when the script finishes.
 
-No Google Cloud project or billing authorization should be created for this
-launcher; stop if Google asks to enable a paid service.
+## How the workflow runs
 
-## Test
+- GitHub Actions manual `mode=local` runs 4 offline smoke tests, plus 6
+  minimum-scope OAuth contract tests, and emits a zero-orders SHA256 receipt.
+- GitHub Actions manual `mode=colab` uses the encrypted repository secret,
+  runs `colab --auth=adc run smoke.py`, then tears down the runtime.
+- Scheduled runs are gated off until Google OAuth and a real remote smoke pass.
+  Only then should `AVRORA_COLAB_AUTOSTART_ENABLED=true` be configured
+  under GitHub repository Actions variables.
 
-GitHub → Actions → **AVRORA public Colab launcher** → Run workflow → mode: `local`.
+**Current boundary:** this is infrastructure smoke testing only, **not**
+an automated replay of AVRORA strategies. Integrating the private strategy
+queue and data access needs separate scoped ingestion, audit artifacts,
+SHA256/readback, verifier, and safety review.
 
-A successful first test shows **4 unit tests passing**, produces a receipt with exactly zero trades and data rows, and uploads a short sanitized artifact. The local test is not proof of remote Colab execution.
+### References
 
-## One-time Google authorization for remote CPU smoke (not yet done)
-
-Use a trusted PC and a Google account with minimal rights:
-
-```sh
-gcloud auth application-default login --scopes=openid,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/colaboratory
-```
-
-The resulting Application Default Credentials JSON contains a **high-value refresh token**. NEVER upload the JSON to this PUBLIC repository, commit it, post it in an issue, or paste it into a chat. Base64 is only transport encoding, not encryption. An account owner must locally encode the entire JSON into GitHub repository **Actions secret** `AVRORA_COLAB_ADC_JSON_B64` (Settings → Secrets and variables → Actions). Protect the repository write access; consider revocation/rotation of the refresh token.
-
-### Windows PowerShell: securely prepare the GitHub secret
-
-After the Google Cloud CLI command above finishes successfully, on **your own Windows PC** run:
-
-```powershell
-$adc = Join-Path $env:APPDATA 'gcloud\application_default_credentials.json'
-if (-not (Test-Path $adc)) { throw 'ADC file not found; first finish gcloud auth application-default login' }
-[Convert]::ToBase64String([IO.File]::ReadAllBytes($adc)) | Set-Clipboard
-```
-
-This copies a sensitive credential to the local clipboard. Immediately open
-[New GitHub Actions secret](https://github.com/vicrex/avrora-colab-launcher/settings/secrets/actions/new),
-enter the name `AVRORA_COLAB_ADC_JSON_B64`, paste the clipboard value into **Secret**, and save.
-Then clear the clipboard with `Set-Clipboard -Value ''`.
-Do not send the contents to ChatGPT or upload them as a file.
-
-Then manually run the workflow with mode: `colab` and verify the receipt `AVRORA_REMOTE_COLAB_PASS`; check Colab VM teardown. Fail closed if authorization or quota is unavailable.
-
-## Not in scope
-
-There is currently **no authenticated import of private AVRORA strategies or Drive data, no approved strategy adapter, no preregistered replay, no automated profit research, and no actual remote Colab run**. Such integration needs separate scoped permissions, SHA256/readback, deterministic CHECK2 verification and audit trails before scheduling. Free Colab availability is not guaranteed.
-
-The existing separate AVRORA Apps Script every-3-hours trigger is untouched. Its hourly conversion needs a separate authenticated Apps Script update; this public launcher cannot change that timer.
-
-Sources: https://github.com/googlecolab/google-colab-cli and https://docs.github.com/en/billing/concepts/product-billing/github-actions
+- [Official Colab CLI Auth implementation](https://github.com/googlecolab/google-colab-cli/blob/main/src/colab_cli/auth.py)
+- [Official Colab CLI operator guide](https://github.com/googlecolab/google-colab-cli/blob/main/skills/colab-operator/SKILL.md)
+- [Google Cloud SDK ADC scopes](https://cloud.google.com/sdk/gcloud/reference/auth/application-default/login)
