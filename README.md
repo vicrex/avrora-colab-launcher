@@ -24,6 +24,22 @@ gcloud auth application-default login --scopes=openid,https://www.googleapis.com
 
 The resulting Application Default Credentials JSON contains a **high-value refresh token**. NEVER upload the JSON to this PUBLIC repository, commit it, post it in an issue, or paste it into a chat. Base64 is only transport encoding, not encryption. An account owner must locally encode the entire JSON into GitHub repository **Actions secret** `AVRORA_COLAB_ADC_JSON_B64` (Settings → Secrets and variables → Actions). Protect the repository write access; consider revocation/rotation of the refresh token.
 
+### Windows PowerShell: securely prepare the GitHub secret
+
+After the Google Cloud CLI command above finishes successfully, on **your own Windows PC** run:
+
+```powershell
+$adc = Join-Path $env:APPDATA 'gcloud\application_default_credentials.json'
+if (-not (Test-Path $adc)) { throw 'ADC file not found; first finish gcloud auth application-default login' }
+[Convert]::ToBase64String([IO.File]::ReadAllBytes($adc)) | Set-Clipboard
+```
+
+This copies a sensitive credential to the local clipboard. Immediately open
+[New GitHub Actions secret](https://github.com/vicrex/avrora-colab-launcher/settings/secrets/actions/new),
+enter the name `AVRORA_COLAB_ADC_JSON_B64`, paste the clipboard value into **Secret**, and save.
+Then clear the clipboard with `Set-Clipboard -Value ''`.
+Do not send the contents to ChatGPT or upload them as a file.
+
 Then manually run the workflow with mode: `colab` and verify the receipt `AVRORA_REMOTE_COLAB_PASS`; check Colab VM teardown. Fail closed if authorization or quota is unavailable.
 
 ## Not in scope
