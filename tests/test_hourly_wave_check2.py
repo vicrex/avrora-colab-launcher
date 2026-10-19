@@ -72,6 +72,31 @@ class WaveCheck2Test(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"CHECK2_VALUE"):
             b.verify_all(series,self.params,altered,ledger)
 
+    def test_complete_evaluate_and_receipt_synthetic_e2e(self):
+        # E2E without private files: all six symbols, two periods, portfolio
+        # scheduling, independent CHECK2, SHA-bound receipt and verifier.
+        from unittest import mock
+        manifest=a.load_manifest()
+        series={}
+        for period in ("may_2026","july_2026"):
+            for symbol in ("BTCUSDT","ETHUSDT","SOLUSDT","NEARUSDT","LINKUSDT","XRPUSDT"):
+                bars=list(self.bars)
+                # Shift times in July while preserving intra-period continuity.
+                if period=="july_2026":
+                    bars=[(t+60*86400000,op,hi,lo,cl) for t,op,hi,lo,cl in bars]
+                series[(period,symbol)]=bars
+        with mock.patch.object(a,"read_data",return_value=series):
+            result=a.evaluate(b"synthetic",manifest,"FIVE_WAVE_01")
+        self.assertEqual(result["check2"],"PASS_FULL_SIGNAL_AND_LEDGER_PARITY")
+        self.assertTrue(result["independent_signal_parity"])
+        self.assertGreater(result["proposals"],0)
+        self.assertGreater(result["closed_trades"],0)
+        receipt=a.verify_receipt(a.MARKER+a.canonical(result),manifest,"FIVE_WAVE_01")
+        self.assertEqual(receipt,result)
+        changed=dict(result,net20_usdt=result["net20_usdt"]+1)
+        with self.assertRaisesRegex(ValueError,"INTEGRITY"):
+            a.verify_receipt(a.MARKER+a.canonical(changed),manifest,"FIVE_WAVE_01")
+
     def test_no_future_dependency_before_confirmation(self):
         short=self.bars[:64]
         self.assertEqual([s for s in a.signals(self.bars,self.params) if s["signal_i"]<=62],
