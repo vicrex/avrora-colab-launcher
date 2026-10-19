@@ -14,26 +14,12 @@ spec.loader.exec_module(m)
 
 
 class PrivateWaveTest(unittest.TestCase):
-    def test_source_discovery_requires_exactly_one_match(self):
-        class Response:
-            def __init__(self, obj, status=200):
-                self.obj, self.status_code = obj, status
-            def json(self):
-                return self.obj
-        class Session:
-            def __init__(self, result):
-                self.result = result
-            def get(self, url, params=None, timeout=None):
-                assert url.endswith("/drive/v3/files")
-                assert params["q"].startswith("name = '")
-                return Response(self.result)
-        name = m.PRIVATE_SOURCE_NAMES["csv"]
-        one = {"files":[{"id":"1234567890123456","name":name}]}
-        self.assertEqual(m.discover_drive_id(Session(one),name),"1234567890123456")
-        for bad in ({"files":[]}, {"files":one["files"]*2},
-                    {"files":one["files"], "nextPageToken":"more"}):
-            with self.assertRaises(ValueError):
-                m.discover_drive_id(Session(bad),name)
+    def test_does_not_require_broad_google_drive_permission(self):
+        self.assertFalse(hasattr(m, "fetch_private_inputs"))
+        self.assertFalse(hasattr(m, "discover_drive_id"))
+        source=(ROOT/"tools"/"private_wave_colab.py").read_text()
+        self.assertNotIn("drive.readonly", source)
+        self.assertNotIn("https://www.googleapis.com/drive", source)
 
     def test_hash_rejects_unverified_inputs(self):
         with self.assertRaises(ValueError):
