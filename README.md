@@ -2,6 +2,30 @@
 
 Safe, public CPU-only Google Colab smoke runner for the private AVRORA project. **No private AVRORA code, private Google Drive data, trading credentials or trading orders** are contained in this repository. All jobs run with `REAL=OFF` and `HOLDOUT=SEALED`.
 
+## Private-source Wave/Fibonacci Colab replay — pending read-only deploy key (2026-10-19)
+
+This pathway **does NOT request access to Google Drive** and requires **no second Google account**. Original data still resides on Google Drive, but byte-identical, SHA256-pinned snapshots live in **private** [vicrex/avrora-wave-source](https://github.com/vicrex/avrora-wave-source), which contains **only** the P900 discovery May/July 2026 CSV (8064 M15 rows for BTC, ETH, SOL, NEAR, LINK, XRP), the frozen 2026-10-18 wave/Fibonacci archive and an explanatory README. No HOLDOUT material or exchange secrets were copied.
+
+[Private research workflow](https://github.com/vicrex/avrora-colab-launcher/actions/workflows/avrora-private-wave.yml) was installed with an hourly `37 * * * *` schedule but its **AVRORA_PRIVATE_WAVE_ENABLED** variable is deliberately **not set**. Thus no private replay is running unattended yet. Its `mode=preflight` was executed with 16/16 tests PASS: [Run 39236857986](https://github.com/vicrex/avrora-colab-launcher/actions/runs/39236857986). The separate hourly public CPU smoke continues unchanged.
+
+**Remaining one-time setup:** the owner of `vicrex` needs to generate a **read-only GitHub deploy key ONLY for `vicrex/avrora-wave-source`** and store its private half as encrypted GitHub Actions secret `AVRORA_WAVE_SOURCE_DEPLOY_KEY` in this launcher. This does NOT grant access to the original private `vicrex/AVRORA` repository, Google Drive or any unrelated repo.
+
+In your existing Google Cloud Shell (`vicfbin@cloudshell`, signed in to GitHub CLI as `vicrex`) execute:
+
+```bash
+cd ~/avrora-colab-launcher
+git pull --ff-only
+bash tools/connect_private_source_cloud_shell.sh
+```
+
+The committed script checks source-repository private visibility and GitHub account `vicrex`, creates an Ed25519 deploy key with **read_only=true**, uploads private key directly to GitHub encrypted Actions secret using `gh secret set`, validates by name and erases local key files. No secret contents are printed. A setup attempt through graphical Cloud Shell automation **could not focus the terminal**. As of the last explicit check, the deploy key and `AVRORA_WAVE_SOURCE_DEPLOY_KEY` secret are both absent: do not claim this step complete until verified in GitHub.
+
+After the setup success, run **one manual workflow `mode=wave`** and verify the remote Colab receipt, independent checker, source hashes, and aggregate economic metrics. **Only after that pass**, enable `AVRORA_PRIVATE_WAVE_ENABLED=true`. Repeating immutable discovery input yields no new out-of-sample evidence or newly discovered strategies, so regular executions should later become **change-driven** rather than costly repeats.
+
+Published preflight and remote paths use `REAL=OFF`, `HOLDOUT=SEALED`, private-source SHA256 checks, no private source in public repository, and upload **only aggregate receipt**. The previous P900 discovered wave result is negative (32 WAVE trades, -26.458036 USDT net20; after portfolio timing fix, 106 Fibonacci trades, -88.815211 USDT net20). It is not proof of tradeability.
+
+---
+
 ## Deployment status
 
 - Public GitHub Actions offline smoke was confirmed PASS, using free standard public repository runner.
