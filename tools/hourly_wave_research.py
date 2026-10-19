@@ -253,6 +253,8 @@ def evaluate(raw, m, candidate_id):
     passed = len(ledger)>=30 and net20>0 and net25>0 and pf is not None and pf>1.2 and rate>=4
     receipt = {
         "schema":"AVRORA_FIVE_WAVE_DISCOVERY_RESULT_V1",
+        "engine_sha256":sha(Path(__file__).read_bytes()),
+        "checker_sha256":sha((Path(__file__).parent/"hourly_wave_check2.py").read_bytes()),
         "status":"PASS_REPRODUCIBLE_DISCOVERY" if ledger else "PASS_NO_TRADES",
         "promotion":"RESEARCH_ONLY_NEVER_LIVE", "candidate":candidate_id,
         "candidate_sha256":sha(canonical(candidate).encode()),
@@ -283,7 +285,9 @@ def verify_receipt(text, m, candidate_id):
         raise ValueError("BLOCKED_CANDIDATE_MISMATCH")
     if receipt.get("manifest_sha256") != sha(canonical(m).encode()):
         raise ValueError("BLOCKED_PREREG_MISMATCH")
-    for key,value in (("candidate",candidate_id),("source_sha256",SOURCE_SHA),
+    for key,value in (("engine_sha256",sha(Path(__file__).read_bytes())),
+                      ("checker_sha256",sha((Path(__file__).parent/"hourly_wave_check2.py").read_bytes())),
+                      ("candidate",candidate_id),("source_sha256",SOURCE_SHA),
                       ("source_rows",8064),("real","OFF"),("holdout","SEALED"),
                       ("oos",False),("promotion","RESEARCH_ONLY_NEVER_LIVE"),
                       ("independent_signal_parity",True),
