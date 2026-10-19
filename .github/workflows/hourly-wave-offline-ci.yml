@@ -7,8 +7,10 @@ on:
   pull_request:
     paths:
       - 'tools/hourly_wave_research.py'
+      - 'tools/hourly_wave_check2.py'
       - 'research/hourly_wave_prereg.json'
       - 'tests/test_hourly_wave_research.py'
+      - 'tests/test_hourly_wave_check2.py'
       - '.github/workflows/hourly-wave-offline-ci.yml'
 
 permissions:
@@ -31,6 +33,6 @@ jobs:
       - name: Validate manifest, causality and defensive contracts
         run: |
           set -euo pipefail
-          python -m unittest discover -s tests -p 'test_hourly_wave_research.py' -v
-          python -m py_compile tools/hourly_wave_research.py
+          python -m unittest discover -s tests -p 'test_hourly_wave*.py' -v
+          python -m py_compile tools/hourly_wave_research.py tools/hourly_wave_check2.py
           python tools/hourly_wave_research.py select
