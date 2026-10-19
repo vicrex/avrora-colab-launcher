@@ -6,8 +6,8 @@ Safe, public CPU-only Google Colab smoke runner for the private AVRORA project. 
 
 - Public GitHub Actions offline smoke was confirmed PASS, using free standard public repository runner.
 - GitHub schedule: **hourly at minute 07 UTC** (`7 * * * *`).
-- Remote Colab schedule remains **disabled** by repository variable `AVRORA_COLAB_AUTOSTART_ENABLED` (unset).
-- Remote Google authorization must be completed once, then **one manual remote smoke must pass** before enabling the unattended Colab schedule. No real remote Colab smoke is yet verified. Free Colab uptime/quotas are not guaranteed.
+- Remote Colab **hourly schedule is enabled**: repository Actions variable `AVRORA_COLAB_AUTOSTART_ENABLED=true` verified in GitHub Settings on 2026-10-19. Jobs run on GitHub's best-effort cron `7 * * * *` (may be delayed or skipped by provider).
+- **First authenticated real remote Colab smoke PASSED** on 2026-10-19: [GitHub Actions run #5](https://github.com/vicrex/avrora-colab-launcher/actions/runs/39225306888), commit `bb87e58`, receipt SHA256 validated, `AVRORA_REMOTE_COLAB_PASS`, zero orders/data. The GitHub Actions secret is installed by user and never committed. Free Colab uptime/quotas are not guaranteed.
 - Existing separate AVRORA Google Apps Script timer is untouched.
 
 ## One-time Google authorization — least-privileged trial
@@ -22,10 +22,7 @@ An alternative one-time authorization script requests **only**:
 This narrower method uses the public installed-app OAuth client bundled in Google's
 [google-colab-cli 0.7.4](https://github.com/googlecolab/google-colab-cli),
 and writes the approved refresh token as an encrypted GitHub Actions secret
-directly from a private temporary Cloud Shell file. It is **experimental**:
-while the restricted consent parameters and offline scope checks have been written,
-they still require real Google OAuth and remote Colab validation. The server may
-reject the narrower grant; if so, stop rather than silently broadening permissions.
+directly from a private temporary Cloud Shell file. The Google consent completed and the real remote Colab smoke passed on 2026-10-19. This confirms CPU smoke with narrow scopes; it does not grant Drive research-data access.
 
 1. On your existing Google Cloud Shell terminal, **cancel** any pending broad
    `Google Auth Library` consent and press **Ctrl+C** if the previous
@@ -59,9 +56,7 @@ The temporary Google ADC JSON is automatically erased when the script finishes.
   minimum-scope OAuth contract tests, and emits a zero-orders SHA256 receipt.
 - GitHub Actions manual `mode=colab` uses the encrypted repository secret,
   runs `colab --auth=adc run smoke.py`, then tears down the runtime.
-- Scheduled runs are gated off until Google OAuth and a real remote smoke pass.
-  Only then should `AVRORA_COLAB_AUTOSTART_ENABLED=true` be configured
-  under GitHub repository Actions variables.
+- Scheduled remote CPU-only smokes are **enabled hourly** with `AVRORA_COLAB_AUTOSTART_ENABLED=true` following successful Google OAuth and remote test #5. The first actual scheduled event has not yet been observed or verified.
 
 **Current boundary:** this is infrastructure smoke testing only, **not**
 an automated replay of AVRORA strategies. Integrating the private strategy
