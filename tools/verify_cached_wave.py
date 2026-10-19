@@ -8,7 +8,8 @@ def verify(path):
     raw = Path(path).read_text(encoding="utf-8")
     if len(raw)>10000:
         raise ValueError("BLOCKED_AGGREGATE_RECEIPT_OVERSIZE")
-    result=protocol.verify_remote_receipt(protocol.MARKER+raw)
+    compact = json.dumps(json.loads(raw), sort_keys=True, separators=(",", ":"))
+    result=protocol.verify_remote_receipt(protocol.MARKER+compact)
     if result["oos"] is not False or result["status"]!="PASS":
         raise ValueError("BLOCKED_NOT_DISCOVERY_RESULT")
     return result
