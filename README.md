@@ -2,27 +2,29 @@
 
 Safe, public CPU-only Google Colab smoke runner for the private AVRORA project. **No private AVRORA code, private Google Drive data, trading credentials or trading orders** are contained in this repository. All jobs run with `REAL=OFF` and `HOLDOUT=SEALED`.
 
-## Private-source Wave/Fibonacci Colab replay — pending read-only deploy key (2026-10-19)
+## Private P900 Wave/Fibonacci Colab replay — live and gated (2026-10-19)
 
-This pathway **does NOT request access to Google Drive** and requires **no second Google account**. Original data still resides on Google Drive, but byte-identical, SHA256-pinned snapshots live in **private** [vicrex/avrora-wave-source](https://github.com/vicrex/avrora-wave-source), which contains **only** the P900 discovery May/July 2026 CSV (8064 M15 rows for BTC, ETH, SOL, NEAR, LINK, XRP), the frozen 2026-10-18 wave/Fibonacci archive and an explanatory README. No HOLDOUT material or exchange secrets were copied.
+**Verified end-to-end from GitHub Actions through a real Google Colab CPU session**. [Run #39238496834](https://github.com/vicrex/avrora-colab-launcher/actions/runs/39238496834) has GitHub job conclusion SUCCESS; remote result marker `AVRORA_COLAB_PRIVATE_WAVE_REPLAY_PASS`. Its publicly accessible **aggregate-only** artifact is named `avrora-wave-verified-39238496834`; independently verified receipt SHA256:
+`1696a112e7a4ed7ca71297945904103b9d932abc6be24ae0ec9395b8fec2eb1e`.
+The artifact contains one JSON summary only, with NO private code, price series, tokens, or per-trade ledger.
 
-[Private research workflow](https://github.com/vicrex/avrora-colab-launcher/actions/workflows/avrora-private-wave.yml) was installed with an hourly `37 * * * *` schedule but its **AVRORA_PRIVATE_WAVE_ENABLED** variable is deliberately **not set**. Thus no private replay is running unattended yet. Its `mode=preflight` was executed with 16/16 tests PASS: [Run 39236857986](https://github.com/vicrex/avrora-colab-launcher/actions/runs/39236857986). The separate hourly public CPU smoke continues unchanged.
+The launcher uses two **distinct and verified** secrets:
+- `AVRORA_COLAB_ADC_JSON_B64` is the pre-existing least-scope Google Colab API credential.
+- `AVRORA_WAVE_SOURCE_DEPLOY_KEY` is the encrypted private half of a GitHub **READ-ONLY deploy key**, scoped to **ONLY** the [dedicated private repo `vicrex/avrora-wave-source`](https://github.com/vicrex/avrora-wave-source). It does not authorize Google Drive or the full private `vicrex/AVRORA` repository. An owner-led Cloud Shell script created this key once and erased its temporary private-key file. GitHub UI verified key read-only status and secret presence.
 
-**Remaining one-time setup:** the owner of `vicrex` needs to generate a **read-only GitHub deploy key ONLY for `vicrex/avrora-wave-source`** and store its private half as encrypted GitHub Actions secret `AVRORA_WAVE_SOURCE_DEPLOY_KEY` in this launcher. This does NOT grant access to the original private `vicrex/AVRORA` repository, Google Drive or any unrelated repo.
+Frozen P900 discovery inputs (8064 M15 candles across 6 instruments and May/July 2026, not OOS) and original engine archive were byte-reconciled against Google Drive and pinned inside the private source repository. The runner reconstructs the inputs and checks their SHA256, repairs the known portfolio time-accounting bug in both engine and independent checker, executes both on Colab, verifies CHECK2 field parity, and accepts only the SHA256-bound aggregate receipt.
 
-In your existing Google Cloud Shell (`vicfbin@cloudshell`, signed in to GitHub CLI as `vicrex`) execute:
+Actual Colab proof, 20 basis points modeled round-trip costs:
+| Model | Closed trades | Net20, total 14 days | PF20 |
+| --- | ---: | ---: | ---: |
+| WAVE_123_CONFIRM | 32 | **−26.458036 USDT** | 0.6419 |
+| FIB_618_RETRACE | 106 | **−88.815211 USDT** | 0.6026 |
 
-```bash
-cd ~/avrora-colab-launcher
-git pull --ff-only
-bash tools/connect_private_source_cloud_shell.sh
-```
+**Enabled** GitHub Actions variable `AVRORA_PRIVATE_WAVE_ENABLED=true`, verified after success of first real wave replay. [Private-source workflow](https://github.com/vicrex/avrora-colab-launcher/actions/workflows/avrora-private-wave.yml) has best-effort GitHub cron `37 * * * *` for hourly, CPU-only, zero-trading repeat verification. The independent public launcher CPU smoke also remains enabled at `7 * * * *` under its **separate unchanged** variable `AVRORA_COLAB_AUTOSTART_ENABLED=true`.
 
-The committed script checks source-repository private visibility and GitHub account `vicrex`, creates an Ed25519 deploy key with **read_only=true**, uploads private key directly to GitHub encrypted Actions secret using `gh secret set`, validates by name and erases local key files. No secret contents are printed. A setup attempt through graphical Cloud Shell automation **could not focus the terminal**. As of the last explicit check, the deploy key and `AVRORA_WAVE_SOURCE_DEPLOY_KEY` secret are both absent: do not claim this step complete until verified in GitHub.
+Important limits: the first **scheduled** (rather than manual) private replay is not yet independently observed. Free-tier Colab quota and schedule timing are not guaranteed. Replaying identical consumed discovery data hourly **does not constitute fresh strategy discovery or OOS evidence**. It is automated regression/reproducibility verification, not autonomous profitability optimization, not native PostOnly fills, not safe live trading. `REAL=OFF`; `HOLDOUT=SEALED`. Do not promote negative models to REAL.
 
-After the setup success, run **one manual workflow `mode=wave`** and verify the remote Colab receipt, independent checker, source hashes, and aggregate economic metrics. **Only after that pass**, enable `AVRORA_PRIVATE_WAVE_ENABLED=true`. Repeating immutable discovery input yields no new out-of-sample evidence or newly discovered strategies, so regular executions should later become **change-driven** rather than costly repeats.
-
-Published preflight and remote paths use `REAL=OFF`, `HOLDOUT=SEALED`, private-source SHA256 checks, no private source in public repository, and upload **only aggregate receipt**. The previous P900 discovered wave result is negative (32 WAVE trades, -26.458036 USDT net20; after portfolio timing fix, 106 Fibonacci trades, -88.815211 USDT net20). It is not proof of tradeability.
+After resolving this infrastructure task, research autonomy still needs private versioned data ingests, novel preregistered wave variants, independent out-of-sample candidate evaluation, and a verified stateful queue. No unapproved strategies or sealed holdout are run here.
 
 ---
 
