@@ -240,7 +240,10 @@ def evaluate(raw, m, candidate_id):
         ledger.append(trade)
     check_trades(ledger)
     # Independent signal AND complete global portfolio parity; fail closed.
-    import hourly_wave_check2 as check2
+    if __package__:
+        from . import hourly_wave_check2 as check2
+    else:
+        import hourly_wave_check2 as check2
     parity = check2.verify_all(series, candidate, proposals, ledger)
     if parity["check2"] != "PASS_FULL_SIGNAL_AND_LEDGER_PARITY":
         raise ValueError("BLOCKED_CHECK2_PARITY")
