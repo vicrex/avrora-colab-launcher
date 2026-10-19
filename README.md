@@ -6,7 +6,7 @@ Public **CPU-only smoke runner**. It contains no private AVRORA source, trading 
 
 - GitHub Actions manually starts an **offline** smoke test without credentials.
 - After *user-owned* Google ADC secret configuration, a separate manual mode can run the same harmless smoke in a remote Colab CPU session.
-- The schedule is `7 */3 * * *` (every three hours UTC), but the job is **disabled** until repository variable `AVRORA_COLAB_AUTOSTART_ENABLED=true` is explicitly set. Do not enable that variable until authenticated remote smoke, evidence and Colab quota review pass.
+- The schedule is `7 * * * *` (hourly at minute 07 UTC, subject to GitHub scheduling delays), but the job is **disabled** until repository variable `AVRORA_COLAB_AUTOSTART_ENABLED=true` is explicitly set. Do not enable that variable until authenticated remote smoke, evidence and Colab quota review pass.
 
 ## Easiest one-time setup: Google Cloud Shell (no Windows installation)
 
@@ -79,6 +79,6 @@ Then manually run the workflow with mode: `colab` and verify the receipt `AVRORA
 
 There is currently **no authenticated import of private AVRORA strategies or Drive data, no approved strategy adapter, no preregistered replay, no automated profit research, and no actual remote Colab run**. Such integration needs separate scoped permissions, SHA256/readback, deterministic CHECK2 verification and audit trails before scheduling. Free Colab availability is not guaranteed.
 
-The existing AVRORA Apps Script every-3-hours trigger is untouched.
+The existing separate AVRORA Apps Script every-3-hours trigger is untouched. Its hourly conversion needs a separate authenticated Apps Script update; this public launcher cannot change that timer.
 
 Sources: https://github.com/googlecolab/google-colab-cli and https://docs.github.com/en/billing/concepts/product-billing/github-actions
