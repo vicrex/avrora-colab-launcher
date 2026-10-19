@@ -11,9 +11,9 @@ on:
         options:
           - local
           - colab
-  # Only performs a remote Colab run AFTER enabling the repository variable.
+  # Hourly schedule; only performs remote Colab work AFTER enabling the repository variable.
   schedule:
-    - cron: "7 */3 * * *"
+    - cron: "7 * * * *"
 
 permissions:
   contents: read
