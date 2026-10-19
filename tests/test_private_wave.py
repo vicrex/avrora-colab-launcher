@@ -66,11 +66,16 @@ class PrivateWaveTest(unittest.TestCase):
             self.assertIn("+900000",value[1])
 
     def test_private_workflow_omits_pull_request_triggers(self):
-        wf=(ROOT/".github/workflows/avrora-wave-research.yml")
+        wf=(ROOT/".github/workflows/avrora-private-wave.yml")
         if wf.exists():
             s=wf.read_text()
             self.assertIn("wave_research_enabled",s.lower())
             self.assertNotIn("pull_request:",s)
+            self.assertIn("repository: vicrex/avrora-wave-source",s)
+            self.assertIn("persist-credentials: false",s)
+            self.assertIn("ssh-strict: true",s)
+            self.assertIn("AVRORA_WAVE_SOURCE_DEPLOY_KEY",s)
+            self.assertNotIn("AVRORA_DRIVE_READONLY_ADC_JSON_B64",s)
 
 
 if __name__=="__main__":
