@@ -1,0 +1,30 @@
+name: AVRORA launcher PR offline safety tests
+
+on:
+  pull_request:
+    paths:
+      - "tools/**"
+      - "tests/**"
+      - ".github/workflows/launcher-pr-offline.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run offline safety and cache CLI regressions (no Colab, no secrets)
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -v
