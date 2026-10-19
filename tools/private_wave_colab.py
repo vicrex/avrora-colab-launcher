@@ -44,17 +44,41 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def manifest_from_secret(raw):
-    """Strict manifest shape. Never log source Drive IDs."""
-    doc = json.loads(base64.b64decode(raw, validate=True))
-    if set(doc) != {"csv_file_id", "zip_file_id"}:
-        raise ValueError("BLOCKED_BAD_SOURCE_MANIFEST")
-    for value in doc.values():
-        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{15,100}", value):
-            raise ValueError("BLOCKED_BAD_SOURCE_MANIFEST")
-    if doc["csv_file_id"] == doc["zip_file_id"]:
-        raise ValueError("BLOCKED_DUPLICATE_SOURCE_IDS")
-    return doc
+# Resolve originals by exact names using authorized, read-only Drive metadata.
+# Source file IDs are NEVER hardcoded in this public repo or in a GitHub secret.
+PRIVATE_SOURCE_NAMES = {
+    "csv": "P900_NODE113_CROSSVERIFIED_6SYMBOL_MAY_JULY_2026_M15.csv",
+    "zip": "AVRORA_WAVE_FIB_01_DISCOVERY_2026-10-18.zip",
+}
+
+
+def discover_drive_id(session, exact_name):
+    safe_name = exact_name.replace("\\", "\\\\").replace("'", "\\'")
+    try:
+        response = session.get(
+            "https://www.googleapis.com/drive/v3/files",
+            params={
+                "q": "name = '" + safe_name + "' and trashed = false",
+                "fields": "nextPageToken,files(id,name,mimeType)",
+                "pageSize": 100,
+                "supportsAllDrives": "true",
+                "includeItemsFromAllDrives": "true",
+            }, timeout=45,
+        )
+        if response.status_code != 200:
+            raise ValueError("BLOCKED_PRIVATE_SOURCE_DISCOVERY_HTTP")
+        data = response.json()
+        files = [x for x in data.get("files", []) if x.get("name") == exact_name]
+        if data.get("nextPageToken") or len(files) != 1:
+            raise ValueError("BLOCKED_PRIVATE_SOURCE_NOT_UNIQUE_OR_NOT_FOUND")
+        fid = files[0].get("id")
+        if not isinstance(fid, str) or not re.fullmatch(r"[A-Za-z0-9_-]{15,100}", fid):
+            raise ValueError("BLOCKED_DRIVE_SOURCE_ID_INVALID")
+        return fid
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError("BLOCKED_DRIVE_DISCOVERY_FAILED") from None
 
 
 def validate_source(raw_zip, raw_csv):
@@ -74,7 +98,7 @@ def validate_source(raw_zip, raw_csv):
     return files
 
 
-def fetch_private_inputs(drive_adc_json, ids):
+def fetch_private_inputs(drive_adc_json):
     from google.auth.transport.requests import AuthorizedSession
     from google.oauth2.credentials import Credentials
 
@@ -89,16 +113,16 @@ def fetch_private_inputs(drive_adc_json, ids):
     creds = Credentials.from_authorized_user_info(info)
     session = AuthorizedSession(creds)
     out = {}
-    for kind, key in (("csv", "csv_file_id"), ("zip", "zip_file_id")):
+    for kind, name in PRIVATE_SOURCE_NAMES.items():
+        fid = discover_drive_id(session, name)
         try:
             response = session.get(
-                "https://www.googleapis.com/drive/v3/files/" + ids[key],
+                "https://www.googleapis.com/drive/v3/files/" + fid,
                 params={"alt": "media", "supportsAllDrives": "true"},
-                timeout=100,
-                stream=True,
+                timeout=100, stream=True,
             )
             if response.status_code != 200:
-                raise ValueError("BLOCKED_DRIVE_HTTP_" + str(response.status_code))
+                raise ValueError("BLOCKED_DRIVE_DOWNLOAD_HTTP")
             chunks = []
             size = 0
             for chunk in response.iter_content(chunk_size=65536):
@@ -194,14 +218,12 @@ def verify_remote_receipt(text):
 def main():
     if os.getenv("REAL", "OFF") != "OFF" or os.getenv("HOLDOUT", "SEALED") != "SEALED":
         raise SystemExit("BLOCKED_REAL_OR_HOLDOUT")
-    raw_m = os.getenv("AVRORA_WAVE_SOURCE_MANIFEST_B64", "")
     raw_drive = os.getenv("AVRORA_DRIVE_READONLY_ADC_JSON_B64", "")
-    if not raw_m or not raw_drive:
+    if not raw_drive:
         raise SystemExit("BLOCKED_PRIVATE_DRIVE_SETUP_REQUIRED")
     if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
         raise SystemExit("BLOCKED_COLAB_AUTH_MISSING")
-    ids = manifest_from_secret(raw_m)
-    raw_zip, raw_csv = fetch_private_inputs(raw_drive, ids)
+    raw_zip, raw_csv = fetch_private_inputs(raw_drive)
     files = validate_source(raw_zip, raw_csv)
     remote_code = build_remote_script(files, raw_csv)
     with tempfile.TemporaryDirectory(prefix="avrora-private-wave-") as work:
