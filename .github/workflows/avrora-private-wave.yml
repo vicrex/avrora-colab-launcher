@@ -1,0 +1,99 @@
+name: AVRORA private wave replay (read-only source)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "preflight (offline) or wave (private Colab CPU replay)"
+        type: choice
+        required: true
+        default: preflight
+        options:
+          - preflight
+          - wave
+  # Disabled until read-only deploy key and first complete Colab replay are verified.
+  schedule:
+    - cron: "37 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-private-wave-colab
+  cancel-in-progress: false
+
+jobs:
+  private-wave:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.AVRORA_PRIVATE_WAVE_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      RUN_WAVE: ${{ github.event_name == 'schedule' || inputs.mode == 'wave' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Offline source integrity and safety tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/connect_private_source_cloud_shell.sh
+          python -m unittest discover -s tests -v
+      - name: Validate narrow private source and Colab credentials available
+        if: ${{ env.RUN_WAVE == 'true' }}
+        shell: bash
+        env:
+          HAVE_SOURCE_KEY: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+          HAVE_COLAB_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAVE_SOURCE_KEY" != "true" || "$HAVE_COLAB_ADC" != "true" ]]; then
+            echo "BLOCKED_PRIVATE_REPO_ACCESS_NOT_CONFIGURED"
+            exit 2
+          fi
+          echo "READY_READONLY_PRIVATE_REPO"
+      - name: Checkout PINNED dedicated private source (read-only)
+        if: ${{ env.RUN_WAVE == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: 9c607da975dda64b7f50fe34004fa78e7225ff68
+          path: private_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Set up temporary Colab credentials
+        if: ${{ env.RUN_WAVE == 'true' }}
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Colab CPU private replay WAVE+FIB and independent CHECK2
+        if: ${{ env.RUN_WAVE == 'true' }}
+        shell: bash
+        env:
+          AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
+          AVRORA_WAVE_SUMMARY_PATH: wave_research_summary.json
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
+          python tools/run_private_wave_checkout.py
+      - name: Upload verified aggregate-only proof
+        if: ${{ env.RUN_WAVE == 'true' && success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-wave-verified-${{ github.run_id }}
+          path: wave_research_summary.json
+          if-no-files-found: error
+          retention-days: 3
+      - name: Erase temporary credentials and private source checkout
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
+          rm -rf "${GITHUB_WORKSPACE}/private_source"
