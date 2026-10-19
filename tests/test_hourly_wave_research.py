@@ -114,7 +114,8 @@ class HourlyWaveTests(unittest.TestCase):
             real="OFF",holdout="SEALED",oos=False,
             independent_signal_parity=True,check2="PASS_FULL_SIGNAL_AND_LEDGER_PARITY",
             decision="REJECT_DISCOVERY",
-            closed_trades=0, proposals=0,
+            closed_trades=0, proposals=0, net20_usdt=0, net25_usdt=0,
+            pf20=None, trades_per_symbol_day=0,
         )
         obj["receipt_sha256"]=m.sha(m.canonical(obj).encode())
         text=m.MARKER+m.canonical(obj)
@@ -125,6 +126,20 @@ class HourlyWaveTests(unittest.TestCase):
         tampered["decision"]="RESEARCH_REVIEW_REQUIRED"
         with self.assertRaisesRegex(ValueError,"INTEGRITY"):
             m.verify_receipt(m.MARKER+m.canonical(tampered),m0,candidate["id"])
+        # A forged record may have a recomputed SHA, but cannot assert
+        # profitable approval without matching its own economics.
+        fabricated=copy.deepcopy(obj)
+        fabricated["decision"]="RESEARCH_REVIEW_REQUIRED"
+        fabricated["receipt_sha256"]=m.sha(m.canonical({k:v for k,v in fabricated.items()
+                                                        if k!="receipt_sha256"}).encode())
+        with self.assertRaisesRegex(ValueError,"INCONSISTENT_RESEARCH_DECISION"):
+            m.verify_receipt(m.MARKER+m.canonical(fabricated),m0,candidate["id"])
+        fabricated=copy.deepcopy(obj)
+        fabricated["net25_usdt"]=1
+        fabricated["receipt_sha256"]=m.sha(m.canonical({k:v for k,v in fabricated.items()
+                                                        if k!="receipt_sha256"}).encode())
+        with self.assertRaisesRegex(ValueError,"EMPTY_LEDGER_ECONOMICS"):
+            m.verify_receipt(m.MARKER+m.canonical(fabricated),m0,candidate["id"])
 
     def test_remote_payload_compiles_without_network_or_trading(self):
         remote=m.build_remote_script(b"synthetic-only",self.manifest,"FIVE_WAVE_01")
