@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+from unittest import mock
 from tools import hourly_wave_research as m
 
 
@@ -97,7 +98,7 @@ class HourlyWaveTests(unittest.TestCase):
 
     def test_fails_closed_without_credentials(self):
         self.assertFalse("REAL" in self.manifest["candidates"][0])
-        with unittest.mock.patch.dict("os.environ",{"REAL":"ON"},clear=False):
+        with mock.patch.dict("os.environ",{"REAL":"ON"},clear=False):
             with self.assertRaisesRegex(ValueError,"UNSAFE_ENVIRONMENT"):
                 m.gate()
 
