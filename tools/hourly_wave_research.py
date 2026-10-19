@@ -239,6 +239,11 @@ def evaluate(raw, m, candidate_id):
         trade.update(symbol=symbol, period=period)
         ledger.append(trade)
     check_trades(ledger)
+    # Independent signal AND complete global portfolio parity; fail closed.
+    import hourly_wave_check2 as check2
+    parity = check2.verify_all(series, candidate, proposals, ledger)
+    if parity["check2"] != "PASS_FULL_SIGNAL_AND_LEDGER_PARITY":
+        raise ValueError("BLOCKED_CHECK2_PARITY")
     positives = sum(t["net20"] for t in ledger if t["net20"]>0)
     negatives = -sum(t["net20"] for t in ledger if t["net20"]<0)
     net20 = sum(t["net20"] for t in ledger)
@@ -253,7 +258,7 @@ def evaluate(raw, m, candidate_id):
         "candidate_sha256":sha(canonical(candidate).encode()),
         "manifest_sha256":sha(canonical(m).encode()), "source_sha256":SOURCE_SHA,
         "source_rows":8064, "real":"OFF", "holdout":"SEALED", "oos":False,
-        "independent_signal_parity":False, "maker_fill_proven":False,
+        "independent_signal_parity":True, "check2":parity["check2"], "maker_fill_proven":False,
         "funding_modeled":False, "slippage_modeled":False,
         "proposals":len(proposals), "closed_trades":len(ledger),
         "trades_per_symbol_day":round(rate,6),
@@ -281,7 +286,8 @@ def verify_receipt(text, m, candidate_id):
     for key,value in (("candidate",candidate_id),("source_sha256",SOURCE_SHA),
                       ("source_rows",8064),("real","OFF"),("holdout","SEALED"),
                       ("oos",False),("promotion","RESEARCH_ONLY_NEVER_LIVE"),
-                      ("independent_signal_parity",False)):
+                      ("independent_signal_parity",True),
+                      ("check2","PASS_FULL_SIGNAL_AND_LEDGER_PARITY")):
         if receipt.get(key)!=value:
             raise ValueError("BLOCKED_RECEIPT_SCOPE_"+key)
     if receipt.get("decision") not in ("REJECT_DISCOVERY","RESEARCH_REVIEW_REQUIRED"):
@@ -298,6 +304,7 @@ def verify_receipt(text, m, candidate_id):
 def build_remote_script(raw, m, candidate_id):
     # Script/data exists only in runner temporary filesystem and the private Colab VM.
     self_code = Path(__file__).read_bytes()
+    checker_code = (Path(__file__).parent/"hourly_wave_check2.py").read_bytes()
     manifest_raw = canonical(m).encode()
     return (
         "import base64,os,pathlib,subprocess,sys,tempfile\n"
@@ -306,6 +313,7 @@ def build_remote_script(raw, m, candidate_id):
         "with tempfile.TemporaryDirectory(prefix='avrora-wave-study-') as d:\n"
         " p=pathlib.Path(d)\n"
         + " (p/'model.py').write_bytes(base64.b64decode("+repr(base64.b64encode(self_code).decode())+"))\n"
+        + " (p/'hourly_wave_check2.py').write_bytes(base64.b64decode("+repr(base64.b64encode(checker_code).decode())+"))\n"
         + " (p/'data.csv').write_bytes(base64.b64decode("+repr(base64.b64encode(raw).decode())+"))\n"
         + " (p/'manifest.json').write_bytes(base64.b64decode("+repr(base64.b64encode(manifest_raw).decode())+"))\n"
         + " r=subprocess.run([sys.executable,'model.py','evaluate','data.csv','manifest.json',"+repr(candidate_id)+"],cwd=p,capture_output=True,text=True,timeout=210)\n"
