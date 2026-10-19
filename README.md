@@ -8,6 +8,39 @@ Public **CPU-only smoke runner**. It contains no private AVRORA source, trading 
 - After *user-owned* Google ADC secret configuration, a separate manual mode can run the same harmless smoke in a remote Colab CPU session.
 - The schedule is `7 */3 * * *` (every three hours UTC), but the job is **disabled** until repository variable `AVRORA_COLAB_AUTOSTART_ENABLED=true` is explicitly set. Do not enable that variable until authenticated remote smoke, evidence and Colab quota review pass.
 
+## Easiest one-time setup: Google Cloud Shell (no Windows installation)
+
+This method uses the free Google Cloud Shell terminal in your browser and
+requires **two interactive authorizations by the account owner** (GitHub CLI and Google ADC).
+Do not hand the authorization code or credentials to an agent or paste them into chat.
+
+1. Open https://shell.cloud.google.com/?show=terminal using the Google account intended for Colab. If Cloud Shell asks you to authorize access, review and approve the official Google prompt yourself.
+2. In the Cloud Shell terminal, run:
+
+```bash
+git clone --depth 1 https://github.com/vicrex/avrora-colab-launcher.git
+cd avrora-colab-launcher
+bash tools/connect_cloud_shell.sh
+```
+
+The script is published for review at
+[tools/connect_cloud_shell.sh](https://github.com/vicrex/avrora-colab-launcher/blob/main/tools/connect_cloud_shell.sh).
+It stops unless the GitHub CLI account is exactly **vicrex**, asks the user to
+authorize Google ADC with the four Colab scopes, validates but never prints ADC
+secret fields, and uploads the base64-encoded ADC JSON via a **pipe** to GitHub
+CLI, which encrypts it for the repository. It confirms **only the secret name**.
+The script does not run Colab, enable schedules, fetch private code, or trade.
+If `gh` is missing, install GitHub CLI through Cloud Shell's package manager
+before rerunning the script. Do not share terminal output containing authorization
+codes.
+
+3. Once the script reports **SUCCESS**, tell ChatGPT only `Готово`, without
+credentials or screenshots of authorization codes. The assistant can then
+run one **manual** `mode=colab` test and verify the remote, no-trading receipt.
+
+No Google Cloud project or billing authorization should be created for this
+launcher; stop if Google asks to enable a paid service.
+
 ## Test
 
 GitHub → Actions → **AVRORA public Colab launcher** → Run workflow → mode: `local`.
