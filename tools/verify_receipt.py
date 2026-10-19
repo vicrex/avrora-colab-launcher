@@ -47,7 +47,7 @@ def main():
         raise SystemExit("Usage: verify_receipt.py LOG OUTPUT_JSON")
     data = extract(Path(sys.argv[1]).read_text(encoding="utf-8"))
     Path(sys.argv[2]).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print("AVRORA_REMOTE_COLAB_PASS: verified zero orders, zero data rows and receipt SHA256")
+    print("AVRORA_SMOKE_RECEIPT_PASS: verified zero orders, zero data rows and receipt SHA256")
 
 
 if __name__ == "__main__":
