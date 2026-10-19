@@ -57,6 +57,7 @@ jobs:
           colab version
           colab --auth=adc run smoke.py 2>&1 | tee remote-smoke.log
           python tools/verify_receipt.py remote-smoke.log remote_receipt.json
+          echo "AVRORA_REMOTE_COLAB_PASS"
       - name: Upload sanitized proof
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
