@@ -64,6 +64,40 @@ class HourlyWaveTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"FEE20_PARITY"):
             m.check_trades([altered])
 
+    def test_fifth_wave_pivot_is_confirmed_without_future_lookahead(self):
+        # Synthetic rising 1-2-3-4-5 pivots followed by a close above wave 5.
+        # No real/private market data are used in this regression test.
+        knots=[(0,120),(10,100),(20,110),(30,105),(40,125),
+               (50,115),(60,135),(61,132),(62,131),(63,138),
+               (65,142),(80,142),(90,140)]
+        values=[]
+        for i in range(95):
+            value=140.0
+            for left,right in zip(knots,knots[1:]):
+                t0,v0=left
+                t1,v1=right
+                if t0<=i<=t1:
+                    value=v0+(v1-v0)*(i-t0)/(t1-t0)
+                    break
+            values.append(value)
+        bars=[(i*900000,v,v+0.2,v-0.2,v) for i,v in enumerate(values)]
+        candidate={"wing":2,"buffer_atr":0.15,"wave3_min_ratio":0.8}
+        original=m.signals(bars,candidate)
+        self.assertTrue(original,"Synthetic five-wave pattern must be detected")
+        first=original[0]
+        self.assertEqual(first["signal_i"],63)
+        self.assertEqual(first["entry_i"],64)
+        self.assertEqual(first["pivot5_confirm_i"],62)
+        self.assertLess(first["pivot5_confirm_i"],first["signal_i"])
+        # Future shock must not change an already confirmed signal.
+        changed=list(bars)
+        for i in range(68,len(changed)):
+            v=5.0 if i%2 else 500.0
+            changed[i]=(i*900000,v,v+0.2,v-0.2,v)
+        future=m.signals(changed,candidate)
+        self.assertEqual([x for x in original if x["signal_i"]<=63],
+                         [x for x in future if x["signal_i"]<=63])
+
     def test_receipt_binding_and_replay_rejection(self):
         m0=self.manifest
         candidate=m0["candidates"][0]
