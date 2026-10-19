@@ -28,6 +28,16 @@ After resolving this infrastructure task, research autonomy still needs private 
 
 ---
 
+## Autonomous research progress — 2026-10-19
+
+- Three causal candidates `WAVE_AO_SLOPE_V1`, `WAVE_RSI_WINDOW_V1`, `WAVE_FIB_GOLDEN_ZONE_V1` were **pre-registered before results** in [private source spec](https://github.com/vicrex/avrora-wave-source/blob/main/research/autonomous_wave/PREREG_2026-10-19.json) (commit `c4b87f63acf109181b1f5d8b89e3452bc157366f`, SHA256 `83b7562a0c2561e0fd571a8109ab44f08704e6f729439242a6e9c8d5a55b5ce3`).
+- Local independent full-ledger historical tests on the frozen P900 source: Wave+AO 30 trades, net20 -26.375531 USDT; Wave+RSI 28 trades, -15.277540 USDT; Wave+Fibonacci golden zone 15 trades, -3.712608 USDT. All **REJECT_DISCOVERY** and **NOT OOS**, with stress cost 25bps also negative. 6/6 adversarial candidate tests pass (price-source tamper, prereg change, next-bar mutation). [Private signed research report](https://github.com/vicrex/avrora-wave-source/blob/main/research/autonomous_wave/RESULT_DISCOVERY_2026-10-19.md).
+- The experimental candidate evaluator was **not installed into the Colab workflow**; its attempted GitHub publication was denied by a security check, so do **not** claim autonomous strategy search. Only the original negative WAVE/FIB replay is remotely integrated.
+- Hourly existing historical Colab replay uses a new **SHA256-verified Actions cache** keyed by pinned private source files + executable runner. Successful first cache-producing [run #39240845005](https://github.com/vicrex/avrora-colab-launcher/actions/runs/39240845005) confirmed. Subsequent cache hits should emit `IDLE_NO_NEW_APPROVED_CANDIDATE` and **skip Colab**. The second-run HIT was **not observed** because browser-wallet balance was exhausted and the GitHub retry action was blocked; the behavior is implemented but not E2E proven. New cached verifier uses compact one-line SHA256 receipt parsing and dedicated tamper tests.
+- Research autonomy still requires new prospectively registered data snapshots and source-versioned candidate evaluation, without data leakage or holdout access.
+
+---
+
 ## Deployment status
 
 - Public GitHub Actions offline smoke was confirmed PASS, using free standard public repository runner.
