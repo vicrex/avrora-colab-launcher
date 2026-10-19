@@ -110,7 +110,8 @@ class HourlyWaveTests(unittest.TestCase):
             manifest_sha256=m.sha(m.canonical(m0).encode()),
             source_sha256=m.SOURCE_SHA,source_rows=8064,
             real="OFF",holdout="SEALED",oos=False,
-            independent_signal_parity=False,decision="REJECT_DISCOVERY",
+            independent_signal_parity=True,check2="PASS_FULL_SIGNAL_AND_LEDGER_PARITY",
+            decision="REJECT_DISCOVERY",
             closed_trades=0, proposals=0,
         )
         obj["receipt_sha256"]=m.sha(m.canonical(obj).encode())
