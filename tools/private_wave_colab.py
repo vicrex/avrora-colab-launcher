@@ -1,24 +1,12 @@
-"""Private Drive -> fresh Colab VM wave/fib replay. NO user data in public repo/logs.
+"""Pure WAV-FIB/01 source SHA256 gate and Colab payload/receipt verification.
 
-Requires encrypted GitHub Actions secrets:
-  AVRORA_COLAB_ADC_JSON_B64 (existing; only passed to colab-cli)
-  AVRORA_DRIVE_READONLY_ADC_JSON_B64 (new, user-consented Drive read-only)
-  AVRORA_WAVE_SOURCE_MANIFEST_B64 (new, file IDs only)
-
-Code/data are downloaded only to ephemeral runner RAM/disk, SHA-pinned, embedded
-in a temporary run script transmitted directly to user's Colab VM, then erased.
-Only aggregate proof (no source/individual trades) goes to public artifact.
+NO Google Drive API; NO GitHub API; NO credentials. Called only after a dedicated
+private repository is checked out via an encrypted, read-only GitHub deploy key.
 """
 import base64
 import hashlib
 import io
 import json
-import os
-from pathlib import Path
-import re
-import subprocess
-import sys
-import tempfile
 import zipfile
 
 CSV_SHA = "0a1a913c2ca93951df7ad65b40f3c75b587983f85d1beb818df8787361bc9015"
@@ -32,7 +20,6 @@ PATCHES = {
     "engine.py": ("q['exit_t']>x['entry_t']", "(q['exit_t']+900000)>x['entry_t']"),
     "check2_independent.py": ("a['exit_t']>p['entry_t']", "(a['exit_t']+900000)>p['entry_t']"),
 }
-MAX_INPUT_BYTES = {"csv": 1_500_000, "zip": 200_000}
 MARKER = "AVRORA_PRIVATE_WAVE_RESULT="
 EXPECTED = {
     "WAVE_123_CONFIRM": {"accepted": 32, "net20_usdt": -26.458036},
@@ -42,43 +29,6 @@ EXPECTED = {
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
-
-
-# Resolve originals by exact names using authorized, read-only Drive metadata.
-# Source file IDs are NEVER hardcoded in this public repo or in a GitHub secret.
-PRIVATE_SOURCE_NAMES = {
-    "csv": "P900_NODE113_CROSSVERIFIED_6SYMBOL_MAY_JULY_2026_M15.csv",
-    "zip": "AVRORA_WAVE_FIB_01_DISCOVERY_2026-10-18.zip",
-}
-
-
-def discover_drive_id(session, exact_name):
-    safe_name = exact_name.replace("\\", "\\\\").replace("'", "\\'")
-    try:
-        response = session.get(
-            "https://www.googleapis.com/drive/v3/files",
-            params={
-                "q": "name = '" + safe_name + "' and trashed = false",
-                "fields": "nextPageToken,files(id,name,mimeType)",
-                "pageSize": 100,
-                "supportsAllDrives": "true",
-                "includeItemsFromAllDrives": "true",
-            }, timeout=45,
-        )
-        if response.status_code != 200:
-            raise ValueError("BLOCKED_PRIVATE_SOURCE_DISCOVERY_HTTP")
-        data = response.json()
-        files = [x for x in data.get("files", []) if x.get("name") == exact_name]
-        if data.get("nextPageToken") or len(files) != 1:
-            raise ValueError("BLOCKED_PRIVATE_SOURCE_NOT_UNIQUE_OR_NOT_FOUND")
-        fid = files[0].get("id")
-        if not isinstance(fid, str) or not re.fullmatch(r"[A-Za-z0-9_-]{15,100}", fid):
-            raise ValueError("BLOCKED_DRIVE_SOURCE_ID_INVALID")
-        return fid
-    except ValueError:
-        raise
-    except Exception:
-        raise ValueError("BLOCKED_DRIVE_DISCOVERY_FAILED") from None
 
 
 def validate_source(raw_zip, raw_csv):
@@ -96,46 +46,6 @@ def validate_source(raw_zip, raw_csv):
             raise ValueError("BLOCKED_PORTFOLIO_PATCH_MISMATCH")
         files[name] = files[name].replace(before, after)
     return files
-
-
-def fetch_private_inputs(drive_adc_json):
-    from google.auth.transport.requests import AuthorizedSession
-    from google.oauth2.credentials import Credentials
-
-    info = json.loads(base64.b64decode(drive_adc_json, validate=True))
-    scopes = set(info.get("scopes", []))
-    if info.get("type") != "authorized_user":
-        raise ValueError("BLOCKED_DRIVE_CREDENTIAL_TYPE")
-    if "https://www.googleapis.com/auth/drive.readonly" not in scopes:
-        raise ValueError("BLOCKED_DRIVE_READONLY_SCOPE_MISSING")
-    if "https://www.googleapis.com/auth/cloud-platform" in scopes:
-        raise ValueError("BLOCKED_OVERBROAD_DRIVE_TOKEN")
-    creds = Credentials.from_authorized_user_info(info)
-    session = AuthorizedSession(creds)
-    out = {}
-    for kind, name in PRIVATE_SOURCE_NAMES.items():
-        fid = discover_drive_id(session, name)
-        try:
-            response = session.get(
-                "https://www.googleapis.com/drive/v3/files/" + fid,
-                params={"alt": "media", "supportsAllDrives": "true"},
-                timeout=100, stream=True,
-            )
-            if response.status_code != 200:
-                raise ValueError("BLOCKED_DRIVE_DOWNLOAD_HTTP")
-            chunks = []
-            size = 0
-            for chunk in response.iter_content(chunk_size=65536):
-                size += len(chunk)
-                if size > MAX_INPUT_BYTES[kind]:
-                    raise ValueError("BLOCKED_PRIVATE_INPUT_TOO_LARGE")
-                chunks.append(chunk)
-            out[kind] = b"".join(chunks)
-        except ValueError:
-            raise
-        except Exception:
-            raise ValueError("BLOCKED_DRIVE_DOWNLOAD_FAILED") from None
-    return out["zip"], out["csv"]
 
 
 def build_remote_script(files, raw_csv):
@@ -215,38 +125,3 @@ def verify_remote_receipt(text):
     return obj
 
 
-def main():
-    if os.getenv("REAL", "OFF") != "OFF" or os.getenv("HOLDOUT", "SEALED") != "SEALED":
-        raise SystemExit("BLOCKED_REAL_OR_HOLDOUT")
-    raw_drive = os.getenv("AVRORA_DRIVE_READONLY_ADC_JSON_B64", "")
-    if not raw_drive:
-        raise SystemExit("BLOCKED_PRIVATE_DRIVE_SETUP_REQUIRED")
-    if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-        raise SystemExit("BLOCKED_COLAB_AUTH_MISSING")
-    raw_zip, raw_csv = fetch_private_inputs(raw_drive)
-    files = validate_source(raw_zip, raw_csv)
-    remote_code = build_remote_script(files, raw_csv)
-    with tempfile.TemporaryDirectory(prefix="avrora-private-wave-") as work:
-        src = Path(work) / "wave_private_runtime.py"
-        src.write_text(remote_code, encoding="utf-8")
-        log = Path(work) / "remote-private.log"
-        with log.open("wb") as fh:
-            try:
-                p = subprocess.run(["colab","--auth=adc","run",str(src)],
-                                   stdout=fh, stderr=subprocess.STDOUT, timeout=780,
-                                   env={**os.environ, "REAL":"OFF","HOLDOUT":"SEALED"})
-            except Exception:
-                raise SystemExit("BLOCKED_PRIVATE_COLAB_EXECUTION_ERROR") from None
-        if p.returncode:
-            raise SystemExit("BLOCKED_PRIVATE_COLAB_EXECUTION_FAILED")
-        try:
-            receipt = verify_remote_receipt(log.read_text(encoding="utf-8"))
-        except Exception:
-            raise SystemExit("BLOCKED_REMOTE_RECEIPT_INVALID") from None
-        result_path = Path(os.environ.get("AVRORA_WAVE_SUMMARY_PATH", "wave_summary.json"))
-        result_path.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-    print("AVRORA_PRIVATE_WAVE_CHECK2_PASS: 32 WAVE / 106 FIB, net20 validated, no orders.")
-
-
-if __name__ == "__main__":
-    main()
