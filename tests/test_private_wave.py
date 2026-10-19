@@ -69,7 +69,7 @@ class PrivateWaveTest(unittest.TestCase):
         wf=(ROOT/".github/workflows/avrora-private-wave.yml")
         if wf.exists():
             s=wf.read_text()
-            self.assertIn("wave_research_enabled",s.lower())
+            self.assertIn("avrora_private_wave_enabled",s.lower())
             self.assertNotIn("pull_request:",s)
             self.assertIn("repository: vicrex/avrora-wave-source",s)
             self.assertIn("persist-credentials: false",s)
