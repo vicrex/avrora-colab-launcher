@@ -66,13 +66,23 @@ jobs:
           ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
           ssh-strict: true
           ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
-      - name: Set up temporary Colab credentials
+      - name: Restore SHA-keyed completed-wave cache
+        id: existing_proof
         if: ${{ env.RUN_WAVE == 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: wave_research_summary.json
+          key: avrora-wave-v1-${{ hashFiles('tools/private_wave_colab.py', 'tools/run_private_wave_checkout.py', 'private_source/research/WAVE_FIB_01/private_source/*') }}
+      - name: Verify and skip unchanged completed discovery
+        if: ${{ env.RUN_WAVE == 'true' && steps.existing_proof.outputs.cache-hit == 'true' }}
+        run: python tools/verify_cached_wave.py wave_research_summary.json
+      - name: Set up temporary Colab credentials
+        if: ${{ env.RUN_WAVE == 'true' && steps.existing_proof.outputs.cache-hit != 'true' }}
         env:
           AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
         run: python tools/write_adc.py
       - name: Colab CPU private replay WAVE+FIB and independent CHECK2
-        if: ${{ env.RUN_WAVE == 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && steps.existing_proof.outputs.cache-hit != 'true' }}
         shell: bash
         env:
           AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
@@ -82,13 +92,19 @@ jobs:
           python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
           python tools/run_private_wave_checkout.py
       - name: Upload verified aggregate-only proof
-        if: ${{ env.RUN_WAVE == 'true' && success() }}
+        if: ${{ env.RUN_WAVE == 'true' && success() && steps.existing_proof.outputs.cache-hit != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: avrora-wave-verified-${{ github.run_id }}
           path: wave_research_summary.json
           if-no-files-found: error
           retention-days: 3
+      - name: Cache verified aggregate proof against unchanged inputs
+        if: ${{ env.RUN_WAVE == 'true' && success() && steps.existing_proof.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: wave_research_summary.json
+          key: avrora-wave-v1-${{ hashFiles('tools/private_wave_colab.py', 'tools/run_private_wave_checkout.py', 'private_source/research/WAVE_FIB_01/private_source/*') }}
       - name: Erase temporary credentials and private source checkout
         if: ${{ always() }}
         shell: bash
