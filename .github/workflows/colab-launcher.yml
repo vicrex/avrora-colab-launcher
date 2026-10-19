@@ -1,0 +1,75 @@
+name: AVRORA public Colab launcher (safe smoke only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "local (no auth) or colab (authorized CPU only)"
+        required: true
+        type: choice
+        default: local
+        options:
+          - local
+          - colab
+  # Only performs a remote Colab run AFTER enabling the repository variable.
+  schedule:
+    - cron: "7 */3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-colab-public-launcher
+  cancel-in-progress: false
+
+jobs:
+  safety-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.AVRORA_COLAB_AUTOSTART_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      RUN_REMOTE: ${{ github.event_name == 'schedule' || inputs.mode == 'colab' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run offline safety gate
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -v
+          python smoke.py | tee local-smoke.log
+          python tools/verify_receipt.py local-smoke.log local_receipt.json
+      - name: Validate Google user credentials from repository secret
+        if: ${{ env.RUN_REMOTE == 'true' }}
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          python tools/write_adc.py
+      - name: Execute Colab CPU smoke and terminate automatically
+        if: ${{ env.RUN_REMOTE == 'true' }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'google-colab-cli==0.7.4'
+          colab version
+          colab --auth=adc run smoke.py 2>&1 | tee remote-smoke.log
+          python tools/verify_receipt.py remote-smoke.log remote_receipt.json
+      - name: Upload sanitized proof
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-smoke-receipts-${{ github.run_id }}
+          path: |
+            local_receipt.json
+            remote_receipt.json
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Delete temporary Google credentials
+        if: ${{ always() }}
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
