@@ -11,6 +11,7 @@ on:
         options:
           - preflight
           - wave
+          - full13
   # Existing hourly scheduler; FULL13 is enabled only after pinned private source is complete.
   schedule:
     - cron: "37 * * * *"
@@ -30,8 +31,8 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      RUN_WAVE: ${{ github.event_name == 'schedule' || inputs.mode == 'wave' }}
-      RUN_FULL13: ${{ vars.AVRORA_FULL13_ENABLED == 'true' }}
+      RUN_WAVE: ${{ github.event_name == 'schedule' || inputs.mode == 'wave' || inputs.mode == 'full13' }}
+      RUN_FULL13: ${{ vars.AVRORA_FULL13_ENABLED == 'true' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'full13') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -130,7 +131,7 @@ jobs:
           set -euo pipefail
           python tools/hourly_wave_research.py verify hourly_research_receipt.json "${{ steps.research_candidate.outputs.id }}"
       - name: Set up temporary Colab credentials
-        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' && (steps.existing_proof.outputs.cache-hit != 'true' || steps.candidate_cache.outputs.cache-hit != 'true') }}
+        if: ${{ env.RUN_WAVE == 'true' && (env.RUN_FULL13 == 'true' || steps.existing_proof.outputs.cache-hit != 'true' || steps.candidate_cache.outputs.cache-hit != 'true') }}
         env:
           AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
         run: python tools/write_adc.py
