@@ -1,0 +1,120 @@
+{
+  "schema": "AVRORA_FIVE_WAVE_DISCOVERY_PREREG_V1",
+  "created_on": "2026-10-19",
+  "dataset": "P900_DISCOVERY_MAY_JUL_2026",
+  "source_sha256": "0a1a913c2ca93951df7ad65b40f3c75b587983f85d1beb818df8787361bc9015",
+  "market": "Bybit USDT-M proxy M15 six symbols",
+  "oos": false,
+  "prior_exposure": "May/July 2026 consumed in earlier discovery; never OOS",
+  "holdout": "SEALED",
+  "real": "OFF",
+  "research_cadence": "Hourly select UTC hour modulo 12, test each immutable candidate at most once with SHA-keyed cache; idle afterward until new source/version",
+  "execution": "Confirmed causal pivots, entry next candle open, stop-first, gaps at open, 20/25bps modeled round-trip, max 2 slots, one per symbol, max notional 500 USDT, risk at stop <=5 USDT; no funding/slippage/true maker fill",
+  "no_live_promotion": true,
+  "acceptance": {
+    "min_trades": 30,
+    "min_net20_exclusive": 0,
+    "min_net25_exclusive": 0,
+    "min_pf20_exclusive": 1.2,
+    "min_trades_per_symbol_day": 4,
+    "independent_checker_required_before_any_later_promotion": true
+  },
+  "candidates": [
+    {
+      "id": "FIVE_WAVE_01",
+      "wing": 2,
+      "buffer_atr": 0,
+      "wave3_min_ratio": 0.8,
+      "reward_r": 1.5,
+      "max_bars": 16
+    },
+    {
+      "id": "FIVE_WAVE_02",
+      "wing": 2,
+      "buffer_atr": 0,
+      "wave3_min_ratio": 1,
+      "reward_r": 2,
+      "max_bars": 24
+    },
+    {
+      "id": "FIVE_WAVE_03",
+      "wing": 2,
+      "buffer_atr": 0.15,
+      "wave3_min_ratio": 0.8,
+      "reward_r": 1.5,
+      "max_bars": 16
+    },
+    {
+      "id": "FIVE_WAVE_04",
+      "wing": 2,
+      "buffer_atr": 0.15,
+      "wave3_min_ratio": 1,
+      "reward_r": 2,
+      "max_bars": 24
+    },
+    {
+      "id": "FIVE_WAVE_05",
+      "wing": 2,
+      "buffer_atr": 0.3,
+      "wave3_min_ratio": 0.8,
+      "reward_r": 1.5,
+      "max_bars": 16
+    },
+    {
+      "id": "FIVE_WAVE_06",
+      "wing": 2,
+      "buffer_atr": 0.3,
+      "wave3_min_ratio": 1,
+      "reward_r": 2,
+      "max_bars": 24
+    },
+    {
+      "id": "FIVE_WAVE_07",
+      "wing": 3,
+      "buffer_atr": 0,
+      "wave3_min_ratio": 0.8,
+      "reward_r": 1.5,
+      "max_bars": 16
+    },
+    {
+      "id": "FIVE_WAVE_08",
+      "wing": 3,
+      "buffer_atr": 0,
+      "wave3_min_ratio": 1,
+      "reward_r": 2,
+      "max_bars": 24
+    },
+    {
+      "id": "FIVE_WAVE_09",
+      "wing": 3,
+      "buffer_atr": 0.15,
+      "wave3_min_ratio": 0.8,
+      "reward_r": 1.5,
+      "max_bars": 16
+    },
+    {
+      "id": "FIVE_WAVE_10",
+      "wing": 3,
+      "buffer_atr": 0.15,
+      "wave3_min_ratio": 1,
+      "reward_r": 2,
+      "max_bars": 24
+    },
+    {
+      "id": "FIVE_WAVE_11",
+      "wing": 3,
+      "buffer_atr": 0.3,
+      "wave3_min_ratio": 0.8,
+      "reward_r": 1.5,
+      "max_bars": 16
+    },
+    {
+      "id": "FIVE_WAVE_12",
+      "wing": 3,
+      "buffer_atr": 0.3,
+      "wave3_min_ratio": 1,
+      "reward_r": 2,
+      "max_bars": 24
+    }
+  ]
+}

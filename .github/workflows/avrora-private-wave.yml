@@ -26,7 +26,7 @@ jobs:
   private-wave:
     if: ${{ github.event_name == 'workflow_dispatch' || vars.AVRORA_PRIVATE_WAVE_ENABLED == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
@@ -76,8 +76,28 @@ jobs:
       - name: Verify and skip unchanged completed discovery
         if: ${{ env.RUN_WAVE == 'true' && steps.existing_proof.outputs.cache-hit == 'true' }}
         run: python tools/verify_cached_wave.py wave_research_summary.json
+      - name: Select one immutable preregistered five-wave candidate
+        id: research_candidate
+        if: ${{ env.RUN_WAVE == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/hourly_wave_research.py select >> "$GITHUB_OUTPUT"
+      - name: Restore completed candidate proof using source + code + candidate SHA
+        id: candidate_cache
+        if: ${{ env.RUN_WAVE == 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: hourly_research_receipt.json
+          key: avrora-fivewave-v1-${{ steps.research_candidate.outputs.id }}-${{ hashFiles('research/hourly_wave_prereg.json', 'tools/hourly_wave_research.py', 'tools/hourly_wave_check2.py', 'tools/run_private_wave_checkout.py', 'private_source/research/WAVE_FIB_01/private_source/*') }}
+      - name: Verify cached candidate (idle when source and code unchanged)
+        if: ${{ env.RUN_WAVE == 'true' && steps.candidate_cache.outputs.cache-hit == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/hourly_wave_research.py verify hourly_research_receipt.json "${{ steps.research_candidate.outputs.id }}"
       - name: Set up temporary Colab credentials
-        if: ${{ env.RUN_WAVE == 'true' && steps.existing_proof.outputs.cache-hit != 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && (steps.existing_proof.outputs.cache-hit != 'true' || steps.candidate_cache.outputs.cache-hit != 'true') }}
         env:
           AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
         run: python tools/write_adc.py
@@ -105,6 +125,30 @@ jobs:
         with:
           path: wave_research_summary.json
           key: avrora-wave-v1-${{ hashFiles('tools/private_wave_colab.py', 'tools/run_private_wave_checkout.py', 'private_source/research/WAVE_FIB_01/private_source/*') }}
+      - name: Colab research one frozen candidate, independently verify full ledger
+        if: ${{ env.RUN_WAVE == 'true' && steps.candidate_cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        env:
+          AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
+          python tools/hourly_wave_research.py run "${{ steps.research_candidate.outputs.id }}"
+          python tools/hourly_wave_research.py verify hourly_research_receipt.json "${{ steps.research_candidate.outputs.id }}"
+      - name: Upload aggregate-only candidate receipt
+        if: ${{ env.RUN_WAVE == 'true' && success() && steps.candidate_cache.outputs.cache-hit != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-fivewave-verified-${{ steps.research_candidate.outputs.id }}-${{ github.run_id }}
+          path: hourly_research_receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Cache verified immutable candidate receipt
+        if: ${{ env.RUN_WAVE == 'true' && success() && steps.candidate_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: hourly_research_receipt.json
+          key: avrora-fivewave-v1-${{ steps.research_candidate.outputs.id }}-${{ hashFiles('research/hourly_wave_prereg.json', 'tools/hourly_wave_research.py', 'tools/hourly_wave_check2.py', 'tools/run_private_wave_checkout.py', 'private_source/research/WAVE_FIB_01/private_source/*') }}
       - name: Erase temporary credentials and private source checkout
         if: ${{ always() }}
         shell: bash
