@@ -1,0 +1,38 @@
+name: AVRORA five-wave research offline validation
+
+on:
+  push:
+    branches:
+      - feature/hourly-wave-research-20261019
+  pull_request:
+    paths:
+      - 'tools/hourly_wave_research.py'
+      - 'tools/hourly_wave_check2.py'
+      - 'research/hourly_wave_prereg.json'
+      - 'tests/test_hourly_wave_research.py'
+      - 'tests/test_hourly_wave_check2.py'
+      - '.github/workflows/hourly-wave-offline-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate manifest, causality and defensive contracts
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_hourly_wave*.py' -v
+          python -m py_compile tools/hourly_wave_research.py tools/hourly_wave_check2.py
+          python tools/hourly_wave_research.py select
