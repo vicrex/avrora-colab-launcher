@@ -23,8 +23,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # This is the only scheduled entry point; one FULL13 candidate per hour.
+  full13-scheduled:
+    if: ${{ github.event_name == 'schedule' }}
+    uses: ./.github/workflows/avrora-private-wave.yml
+    secrets: inherit
+
   safety-smoke:
-    if: ${{ github.event_name == 'workflow_dispatch' || vars.AVRORA_COLAB_AUTOSTART_ENABLED == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
