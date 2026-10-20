@@ -149,6 +149,24 @@ jobs:
         with:
           path: hourly_research_receipt.json
           key: avrora-fivewave-v1-${{ steps.research_candidate.outputs.id }}-${{ hashFiles('research/hourly_wave_prereg.json', 'tools/hourly_wave_research.py', 'tools/hourly_wave_check2.py', 'tools/run_private_wave_checkout.py', 'private_source/research/WAVE_FIB_01/private_source/*') }}
+      - name: Record verified or blocked candidate in per-run vector decision map
+        if: ${{ always() && env.RUN_WAVE == 'true' && steps.research_candidate.outputs.id != '' }}
+        shell: bash
+        env:
+          AVRORA_CANDIDATE_ID: ${{ steps.research_candidate.outputs.id }}
+          AVRORA_CACHED: ${{ steps.candidate_cache.outputs.cache-hit }}
+          AVRORA_RECEIPT: hourly_research_receipt.json
+        run: |
+          set -euo pipefail
+          python -m tools.research_vector_delta
+      - name: Preserve every hourly decision/map delta as aggregate-only artifact
+        if: ${{ always() && env.RUN_WAVE == 'true' && steps.research_candidate.outputs.id != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-vector-delta-${{ github.run_id }}-${{ github.run_attempt }}
+          path: research_vector_delta.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Erase temporary credentials and private source checkout
         if: ${{ always() }}
         shell: bash
