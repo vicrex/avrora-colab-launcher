@@ -12,9 +12,8 @@ on:
           - preflight
           - wave
           - full13
-  # Existing hourly scheduler; FULL13 is enabled only after pinned private source is complete.
-  schedule:
-    - cron: "37 * * * *"
+  # Reusable FULL13: scheduled only by the existing public Colab launcher clock.
+  workflow_call:
 
 permissions:
   contents: read
