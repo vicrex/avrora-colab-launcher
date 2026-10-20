@@ -3,13 +3,20 @@ from pathlib import Path
 import re
 import unittest
 
-WF=Path(__file__).resolve().parents[1]/'.github/workflows/avrora-private-wave.yml'
+ROOT=Path(__file__).resolve().parents[1]
+WF=ROOT/'.github/workflows/avrora-private-wave.yml'
+HOURLY=ROOT/'.github/workflows/colab-launcher.yml'
 
 class Full13WorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls): cls.s=WF.read_text(encoding='utf-8')
     def test_one_existing_hourly_timer(self):
-        self.assertEqual(len(re.findall(r'cron: "37 \* \* \* \*"',self.s)),1)
+        caller=HOURLY.read_text(encoding='utf-8')
+        self.assertEqual(len(re.findall(r'cron: "7 \* \* \* \*"',caller)),1)
+        self.assertNotIn('  schedule:',self.s)
+        self.assertIn('workflow_call:',self.s)
+        self.assertIn('uses: ./.github/workflows/avrora-private-wave.yml',caller)
+        self.assertIn('secrets: inherit',caller)
         self.assertIn('cancel-in-progress: false',self.s)
     def test_explicit_full13_dispatch_and_pin(self):
         self.assertIn('          - full13',self.s)
