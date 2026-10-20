@@ -37,7 +37,7 @@ class SingleHourlyFull13Tests(unittest.TestCase):
         self.assertIn("vars.AVRORA_FULL13_ENABLED == 'true'", self.called)
         self.assertIn("FULL13 SINGLE Colab run:", self.called)
         self.assertIn("PASS_PINNED_FULL13_DATASET_69576_M15", self.called)
-        self.assertIn("    cancel-in-progress: false", self.called)
+        self.assertIn("  cancel-in-progress: false", self.called)
 
     def test_manual_smoke_cannot_consume_scheduled_compute(self):
         self.assertIn("RUN_REMOTE: ${{ github.event_name == 'schedule' || inputs.mode == 'colab' }}", self.caller)
