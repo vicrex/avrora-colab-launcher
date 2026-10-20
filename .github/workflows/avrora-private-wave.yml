@@ -249,7 +249,7 @@ jobs:
                                    'warmup_bars':r['warmup_bars_per_period'],
                                    'source_sha256':r['panel_gzip_sha256']})
           card['card_sha256']=hashlib.sha256(f.canon(card).encode()).hexdigest()
-          pathlib.Path('full13_vector_delta.json').write_text(f.canon(card)+'\\n',encoding='utf-8')
+          pathlib.Path('full13_vector_delta.json').write_text(f.canon(card)+chr(10),encoding='utf-8')
           print('AVRORA_FULL13_DELTA '+card['status'])
           PY
       - name: Preserve FULL13 vector decision card even on failure
