@@ -3,6 +3,7 @@
 No credentials, raw historical data, Colab network calls, or private checkouts.
 """
 from pathlib import Path
+import re
 import unittest
 from tools import hourly_wave_research as research
 
@@ -14,7 +15,7 @@ class HourlyColabBridgeTests(unittest.TestCase):
     def test_same_hourly_workflow_not_second_scheduler(self):
         text=WORKFLOW.read_text("utf-8")
         self.assertEqual(text.count('cron: "37 * * * *"'),1)
-        self.assertEqual(text.count("on:"),1)
+        self.assertEqual(len(re.findall(r"(?m)^on:$",text)),1)
         self.assertIn("AVRORA_PRIVATE_WAVE_ENABLED",text)
         self.assertIn('REAL: "OFF"',text)
         self.assertIn('HOLDOUT: "SEALED"',text)
