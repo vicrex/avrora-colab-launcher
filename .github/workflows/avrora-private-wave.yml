@@ -193,7 +193,7 @@ jobs:
       - name: Verify cached FULL13 scope and CHECK2 receipt
         if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' && steps.full13_cache.outputs.cache-hit == 'true' }}
         run: python tools/full13_wave_colab.py verify full13_research_receipt.json "${{ steps.research_candidate.outputs.id }}"
-      - name: FULL13 SINGLE Colab run: 12 weeks + May + 220-bar warmup + CHECK2
+      - name: "FULL13 SINGLE Colab run: 12 weeks + May + 220-bar warmup + CHECK2"
         if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' && steps.full13_cache.outputs.cache-hit != 'true' }}
         env:
           AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
