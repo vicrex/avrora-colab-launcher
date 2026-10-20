@@ -11,7 +11,7 @@ on:
         options:
           - preflight
           - wave
-  # Disabled until read-only deploy key and first complete Colab replay are verified.
+  # Existing hourly scheduler; FULL13 is enabled only after pinned private source is complete.
   schedule:
     - cron: "37 * * * *"
 
@@ -26,11 +26,12 @@ jobs:
   private-wave:
     if: ${{ github.event_name == 'workflow_dispatch' || vars.AVRORA_PRIVATE_WAVE_ENABLED == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
       RUN_WAVE: ${{ github.event_name == 'schedule' || inputs.mode == 'wave' }}
+      RUN_FULL13: ${{ vars.AVRORA_FULL13_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -55,8 +56,15 @@ jobs:
             exit 2
           fi
           echo "READY_READONLY_PRIVATE_REPO"
+      - name: Validate FULL13 source pin before private checkout
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' }}
+        env:
+          FULL13_SHA: ${{ vars.AVRORA_FULL13_SOURCE_SHA }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$FULL13_SHA" =~ ^[a-f0-9]{40}$ ]]; then echo 'BLOCKED_FULL13_SOURCE_SHA_NOT_PINNED'; exit 2; fi
       - name: Checkout PINNED dedicated private source (read-only)
-        if: ${{ env.RUN_WAVE == 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' }}
         uses: actions/checkout@v4
         with:
           repository: vicrex/avrora-wave-source
@@ -66,15 +74,40 @@ jobs:
           ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
           ssh-strict: true
           ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Checkout FULL13 complete SHA-pinned private source (read-only)
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: ${{ vars.AVRORA_FULL13_SOURCE_SHA }}
+          path: private_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Verify complete 13-week private dataset BEFORE Colab spending
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' }}
+        env:
+          AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from tools.full13_wave_colab import load_private,parse_full
+          z,m=load_private(os.environ["AVRORA_PRIVATE_CHECKOUT"])
+          ds=parse_full(z,m)
+          assert len(ds)==78 and sum(map(len,ds.values()))==69576
+          print("PASS_PINNED_FULL13_DATASET_69576_M15")
+          PY
       - name: Restore SHA-keyed completed-wave cache
         id: existing_proof
-        if: ${{ env.RUN_WAVE == 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: wave_research_summary.json
           key: avrora-wave-v1-${{ hashFiles('tools/private_wave_colab.py', 'tools/run_private_wave_checkout.py', 'private_source/research/WAVE_FIB_01/private_source/*') }}
       - name: Verify and skip unchanged completed discovery
-        if: ${{ env.RUN_WAVE == 'true' && steps.existing_proof.outputs.cache-hit == 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' && steps.existing_proof.outputs.cache-hit == 'true' }}
         run: python tools/verify_cached_wave.py wave_research_summary.json
       - name: Select one immutable preregistered five-wave candidate
         id: research_candidate
@@ -85,24 +118,24 @@ jobs:
           python tools/hourly_wave_research.py select >> "$GITHUB_OUTPUT"
       - name: Restore completed candidate proof using source + code + candidate SHA
         id: candidate_cache
-        if: ${{ env.RUN_WAVE == 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: hourly_research_receipt.json
           key: avrora-fivewave-v1-${{ steps.research_candidate.outputs.id }}-${{ hashFiles('research/hourly_wave_prereg.json', 'tools/hourly_wave_research.py', 'tools/hourly_wave_check2.py', 'tools/run_private_wave_checkout.py', 'private_source/research/WAVE_FIB_01/private_source/*') }}
       - name: Verify cached candidate (idle when source and code unchanged)
-        if: ${{ env.RUN_WAVE == 'true' && steps.candidate_cache.outputs.cache-hit == 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' && steps.candidate_cache.outputs.cache-hit == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
           python tools/hourly_wave_research.py verify hourly_research_receipt.json "${{ steps.research_candidate.outputs.id }}"
       - name: Set up temporary Colab credentials
-        if: ${{ env.RUN_WAVE == 'true' && (steps.existing_proof.outputs.cache-hit != 'true' || steps.candidate_cache.outputs.cache-hit != 'true') }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' && (steps.existing_proof.outputs.cache-hit != 'true' || steps.candidate_cache.outputs.cache-hit != 'true') }}
         env:
           AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
         run: python tools/write_adc.py
       - name: Colab CPU private replay WAVE+FIB and independent CHECK2
-        if: ${{ env.RUN_WAVE == 'true' && steps.existing_proof.outputs.cache-hit != 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' && steps.existing_proof.outputs.cache-hit != 'true' }}
         shell: bash
         env:
           AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
@@ -112,7 +145,7 @@ jobs:
           python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
           python tools/run_private_wave_checkout.py
       - name: Upload verified aggregate-only proof
-        if: ${{ env.RUN_WAVE == 'true' && success() && steps.existing_proof.outputs.cache-hit != 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' && success() && steps.existing_proof.outputs.cache-hit != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: avrora-wave-verified-${{ github.run_id }}
@@ -120,13 +153,13 @@ jobs:
           if-no-files-found: error
           retention-days: 3
       - name: Cache verified aggregate proof against unchanged inputs
-        if: ${{ env.RUN_WAVE == 'true' && success() && steps.existing_proof.outputs.cache-hit != 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' && success() && steps.existing_proof.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: wave_research_summary.json
           key: avrora-wave-v1-${{ hashFiles('tools/private_wave_colab.py', 'tools/run_private_wave_checkout.py', 'private_source/research/WAVE_FIB_01/private_source/*') }}
       - name: Colab research one frozen candidate, independently verify full ledger
-        if: ${{ env.RUN_WAVE == 'true' && steps.candidate_cache.outputs.cache-hit != 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' && steps.candidate_cache.outputs.cache-hit != 'true' }}
         shell: bash
         env:
           AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
@@ -136,7 +169,7 @@ jobs:
           python tools/hourly_wave_research.py run "${{ steps.research_candidate.outputs.id }}"
           python tools/hourly_wave_research.py verify hourly_research_receipt.json "${{ steps.research_candidate.outputs.id }}"
       - name: Upload aggregate-only candidate receipt
-        if: ${{ env.RUN_WAVE == 'true' && success() && steps.candidate_cache.outputs.cache-hit != 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' && success() && steps.candidate_cache.outputs.cache-hit != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: avrora-fivewave-verified-${{ steps.research_candidate.outputs.id }}-${{ github.run_id }}
@@ -144,13 +177,90 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Cache verified immutable candidate receipt
-        if: ${{ env.RUN_WAVE == 'true' && success() && steps.candidate_cache.outputs.cache-hit != 'true' }}
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' && success() && steps.candidate_cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: hourly_research_receipt.json
           key: avrora-fivewave-v1-${{ steps.research_candidate.outputs.id }}-${{ hashFiles('research/hourly_wave_prereg.json', 'tools/hourly_wave_research.py', 'tools/hourly_wave_check2.py', 'tools/run_private_wave_checkout.py', 'private_source/research/WAVE_FIB_01/private_source/*') }}
+      - name: Restore complete FULL13 candidate cache (data + model SHA)
+        id: full13_cache
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: full13_research_receipt.json
+          key: avrora-full13-v1-${{ steps.research_candidate.outputs.id }}-${{ hashFiles('research/hourly_wave_prereg.json','tools/hourly_wave_research.py','tools/hourly_wave_check2.py','tools/full13_wave_colab.py','private_source/research/P816_FULL13_PREWEEK220/*') }}
+      - name: Verify cached FULL13 scope and CHECK2 receipt
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' && steps.full13_cache.outputs.cache-hit == 'true' }}
+        run: python tools/full13_wave_colab.py verify full13_research_receipt.json "${{ steps.research_candidate.outputs.id }}"
+      - name: FULL13 SINGLE Colab run: 12 weeks + May + 220-bar warmup + CHECK2
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' && steps.full13_cache.outputs.cache-hit != 'true' }}
+        env:
+          AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
+          python tools/full13_wave_colab.py run "${{ steps.research_candidate.outputs.id }}"
+          python tools/full13_wave_colab.py verify full13_research_receipt.json "${{ steps.research_candidate.outputs.id }}"
+      - name: Upload verified complete 13-week aggregate proof
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' && success() && steps.full13_cache.outputs.cache-hit != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-full13-verified-${{ steps.research_candidate.outputs.id }}-${{ github.run_id }}
+          path: full13_research_receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Cache verified complete 13-week aggregate
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' && success() && steps.full13_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: full13_research_receipt.json
+          key: avrora-full13-v1-${{ steps.research_candidate.outputs.id }}-${{ hashFiles('research/hourly_wave_prereg.json','tools/hourly_wave_research.py','tools/hourly_wave_check2.py','tools/full13_wave_colab.py','private_source/research/P816_FULL13_PREWEEK220/*') }}
+      - name: Record FULL13 result or honest BLOCKED no-receipt (one card per hour)
+        if: ${{ always() && env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' }}
+        shell: bash
+        env:
+          AVRORA_CANDIDATE_ID: ${{ steps.research_candidate.outputs.id }}
+          AVRORA_CACHED: ${{ steps.full13_cache.outputs.cache-hit }}
+          AVRORA_RECEIPT: full13_research_receipt.json
+        run: |
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          from tools import full13_wave_colab as f, hourly_wave_research as w
+          rid=os.environ['GITHUB_RUN_ID']; attempt=os.environ.get('GITHUB_RUN_ATTEMPT','1')
+          cand=os.environ.get('AVRORA_CANDIDATE_ID','')
+          card=dict(schema='AVRORA_FULL13_HOURLY_DECISION_DELTA_V1',run_id=rid,attempt=attempt,
+                    trigger=os.environ.get('GITHUB_EVENT_NAME','schedule'),candidate=cand,
+                    cache_hit=os.environ.get('AVRORA_CACHED')=='true',real='OFF',holdout='SEALED',
+                    oos=False,maker_fill_proven=False,status='BLOCKED_NO_VERIFIED_FULL13_RECEIPT',
+                    decision='BLOCKED',economics_proven=False,metrics=None,receipt_sha256=None,
+                    reason_code='BLOCKED_NO_VERIFIED_FULL13_RECEIPT')
+          try:
+              r=f.verify_receipt(json.loads(pathlib.Path(os.environ['AVRORA_RECEIPT']).read_text()),w.load_manifest(),cand)
+          except (ValueError,OSError,KeyError,TypeError):
+              pass
+          else:
+              card.update(status='IDLE_CACHED_VERIFIED' if card['cache_hit'] else 'VERIFIED_NEW_FULL13_COMPUTATION',
+                          decision='REJECT_FOR_LIVE_DISCOVERY_ONLY',reason_code=None,economics_proven=True,
+                          receipt_sha256=r['receipt_sha256'],
+                          metrics={'discovery':r['discovery'],'may_aux':r['may_aux'],
+                                   'by_week':r['by_week'],'by_symbol':r['by_symbol'],
+                                   'check2':r['check2'],'bars_total':r['bars_total'],
+                                   'warmup_bars':r['warmup_bars_per_period'],
+                                   'source_sha256':r['panel_gzip_sha256']})
+          card['card_sha256']=hashlib.sha256(f.canon(card).encode()).hexdigest()
+          pathlib.Path('full13_vector_delta.json').write_text(f.canon(card)+'\\n',encoding='utf-8')
+          print('AVRORA_FULL13_DELTA '+card['status'])
+          PY
+      - name: Preserve FULL13 vector decision card even on failure
+        if: ${{ always() && env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-full13-vector-delta-${{ github.run_id }}-${{ github.run_attempt }}
+          path: full13_vector_delta.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Record verified or blocked candidate in per-run vector decision map
-        if: ${{ always() && env.RUN_WAVE == 'true' }}
+        if: ${{ always() && env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' }}
         shell: bash
         env:
           AVRORA_CANDIDATE_ID: ${{ steps.research_candidate.outputs.id }}
@@ -160,7 +270,7 @@ jobs:
           set -euo pipefail
           python -m tools.research_vector_delta
       - name: Preserve every hourly decision/map delta as aggregate-only artifact
-        if: ${{ always() && env.RUN_WAVE == 'true' }}
+        if: ${{ always() && env.RUN_WAVE == 'true' && env.RUN_FULL13 != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: avrora-vector-delta-${{ github.run_id }}-${{ github.run_attempt }}
