@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   private-wave:
-    if: ${{ github.event_name == 'workflow_dispatch' || vars.AVRORA_PRIVATE_WAVE_ENABLED == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.AVRORA_PRIVATE_WAVE_ENABLED == 'true' || vars.AVRORA_FULL13_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
