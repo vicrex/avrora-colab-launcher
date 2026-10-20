@@ -9,12 +9,18 @@ from tools import hourly_wave_research as research
 
 ROOT=Path(__file__).resolve().parents[1]
 WORKFLOW=ROOT/".github"/"workflows"/"avrora-private-wave.yml"
+HOURLY=ROOT/".github"/"workflows"/"colab-launcher.yml"
 
 
 class HourlyColabBridgeTests(unittest.TestCase):
     def test_same_hourly_workflow_not_second_scheduler(self):
         text=WORKFLOW.read_text("utf-8")
-        self.assertEqual(text.count('cron: "37 * * * *"'),1)
+        caller=HOURLY.read_text("utf-8")
+        self.assertEqual(caller.count('cron: "7 * * * *"'),1)
+        self.assertNotIn("  schedule:",text)
+        self.assertIn("  workflow_call:",text)
+        self.assertIn("uses: ./.github/workflows/avrora-private-wave.yml",caller)
+        self.assertIn("secrets: inherit",caller)
         self.assertEqual(len(re.findall(r"(?m)^on:$",text)),1)
         self.assertIn("AVRORA_PRIVATE_WAVE_ENABLED",text)
         self.assertIn('REAL: "OFF"',text)
@@ -46,7 +52,7 @@ class HourlyColabBridgeTests(unittest.TestCase):
         self.assertEqual([x["id"] for x in manifest["candidates"]],
                          ["FIVE_WAVE_%02d" % i for i in range(1,13)])
         altered={**manifest,"candidates":[dict(x) for x in manifest["candidates"]]}
-        altered["candidates"][0]["id"]="FIVE_WAVE_01\\nRUN_MALICIOUS=true"
+        altered["candidates"][0]["id"]="FIVE_WAVE_01\\nINVALID_CONTROL"
         with self.assertRaisesRegex(ValueError,"CANDIDATE_ID"):
             research.validate_manifest(altered)
         altered={**manifest,"candidates":list(reversed(manifest["candidates"]))}
