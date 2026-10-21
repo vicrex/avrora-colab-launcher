@@ -44,9 +44,16 @@ def proposals(rows,mode):
                            x["entry"],x["exit"]))
     candidates.sort(key=lambda r:r[:3])
     retained=[]
+    # Independent active slots, constant-time capacity check rather than
+    # re-scanning all historical accepted trades on every new signal.
+    open_slots={}
     for row in candidates:
-        active=[old for old in retained if old[2]==row[2] and old[0]<=row[0]<=old[3]]
-        if len(active)<2 and all(old[1]!=row[1] for old in active):retained.append(row)
+        t,sym,week,end,side,profit,entry,exit_price=row
+        open_slots={key:position for key,position in open_slots.items()
+                    if position[2]==week and position[3]>=t}
+        if len(open_slots)<2 and sym not in open_slots:
+            retained.append(row)
+            open_slots[sym]=row
     return len(candidates),retained
 
 def aggregate(rows,days):
