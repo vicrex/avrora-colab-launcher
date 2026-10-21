@@ -69,10 +69,12 @@ def portfolio(events,mode):
         proposals.append({**row,"side":side,"gross":NOTIONAL*side*(row["exit"]/row["entry"]-1)})
     proposals.sort(key=lambda x:(x["entry_t"],x["symbol"],x["period"]))
     retained=[]
+    active=[]  # Only currently open positions: bounded by capacity of two.
     for x in proposals:
-        active=[p for p in retained if p["period"]==x["period"] and p["entry_t"]<=x["entry_t"]<=p["exit_t"]]
-        if len(active)<2 and not any(p["symbol"]==x["symbol"] for p in active):
+        active=[p for p in active if p["period"]==x["period"] and p["exit_t"]>=x["entry_t"]]
+        if len(active)<2 and all(p["symbol"]!=x["symbol"] for p in active):
             retained.append(x)
+            active.append(x)
     return len(proposals),retained
 
 def summarize(events,days):
@@ -194,7 +196,12 @@ def remote_run(comp,meta):
             p=subprocess.run(["colab","--auth=adc","run",str(program)],stdout=f,
                              stderr=subprocess.STDOUT,timeout=1500,
                              env={**os.environ,"REAL":"OFF","HOLDOUT":"SEALED"})
-        if p.returncode:raise ValueError("BLOCKED_H4_COLAB")
+        if p.returncode:
+            # Never leak private remote output; show ONLY safe BLOCKED_* tokens.
+            import re
+            logtext=logs.read_text(encoding="utf-8",errors="replace")
+            reasons=re.findall(r"BLOCKED_H4_[A-Z0-9_]{3,70}",logtext)
+            raise ValueError(reasons[-1] if reasons else "BLOCKED_H4_COLAB_UNCLASSIFIED")
         found=[s.split(MARKER,1)[1] for s in logs.read_text().splitlines() if MARKER in s]
         if len(found)!=1:raise ValueError("BLOCKED_H4_COLAB_RECEIPT")
         return json.loads(found[0])
