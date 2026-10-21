@@ -210,16 +210,17 @@ def run_evaluation(data,m,manifest_sha):
     gate()
     if len(data)!=78 or sum(len(v) for v in data.values())!=69576:
         raise ValueError("BLOCKED_STRUCTURAL_FULL13_SHAPE")
-    weeks=m["source"] if False else None
     periods=sorted({w for w,sym in data if w!=pin.AUX})
     if len(periods)!=12:raise ValueError("BLOCKED_STRUCTURAL_WEEKS")
     result={}
+    original_books={}
     for mode in CANDIDATES:
         allweeks=book(data,m,mode,False)
         may=book(data,m,mode,True)
+        original_books[mode]={"discovery":allweeks,"may_aux":may}
         result[mode]={"discovery":summarise(allweeks,periods,84),
                       "may_aux":summarise(may,[pin.AUX],7)}
-    return {"schema":SCHEMA,"status":"SHADOW_DISCOVERY_CHECK2",
+    receipt={"schema":SCHEMA,"status":"SHADOW_DISCOVERY_CHECK2",
         "manifest_sha256":manifest_sha,"candidate_ids":list(CANDIDATES),
         "source_panel_sha256":pin.PANEL_GZ_SHA,"periods":13,"bars":69576,
         "discovery_days":84,"may_aux_days":7,"results":result,
@@ -233,12 +234,13 @@ def run_evaluation(data,m,manifest_sha):
                        "orderbook_confirmed":False},
         "independent_check2":"PENDING","real":"OFF","holdout":"SEALED",
         "oos":False,"decision":"DIAGNOSTICS_ONLY_NEVER_LIVE"}
+    return receipt,original_books
 
 def verified(comp,meta):
     data=pin.parse_full(comp,meta)
     m,manifest_sha=load_manifest()
-    obj=run_evaluation(data,m,manifest_sha)
-    obj["independent_check2"]=independent.verify(data,m,obj)
+    obj,original_books=run_evaluation(data,m,manifest_sha)
+    obj["independent_check2"]=independent.verify(data,m,obj,original_books)
     obj["primary_sha256"]=hashbytes(pathlib.Path(__file__).read_bytes())
     obj["checker_sha256"]=hashbytes(pathlib.Path(independent.__file__).read_bytes())
     obj["receipt_sha256"]=hashbytes(canon(obj).encode())
