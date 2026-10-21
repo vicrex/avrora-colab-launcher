@@ -1,0 +1,114 @@
+name: AVRORA ResCP-lite FULL13 shadow (pinned reviewed code)
+
+on:
+  push:
+    branches: [main]
+    paths: ["tools/rescp_shadow.py", "tools/rescp_check2.py", ".github/workflows/rescp-lite-full13.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: avrora-private-wave-colab
+  cancel-in-progress: false
+
+jobs:
+  frozen-rescp-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      AVRORA_ALLOW_RESCP_SHADOW: "YES"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Independent offline research and fail-closed tests
+        run: python -m unittest discover -s tests -v
+      - name: Verify exact owner prereg and bot receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from tools import public_research_ingress as a
+          from tools import public_research_review_gate as g
+          from tools import rescp_shadow as m
+          issue=a.gh('GET','/repos/vicrex/avrora-colab-launcher/issues/15')
+          comments=a.pages('/repos/vicrex/avrora-colab-launcher/issues/15/comments')
+          spec=g.proof(issue,comments)
+          if a.digest(spec)!=m.PREREG_SHA:raise SystemExit('BLOCKED_RESCP_PREREG_SHA')
+          expected=g.gate_comment(spec,15)
+          if sum(c.get('body')==expected and c.get('user',{}).get('login')==g.BOT for c in comments)!=1:
+              raise SystemExit('BLOCKED_RESCP_GATE_RECEIPT')
+          print('PASS_PINNED_RESCP_ISSUE_15_PREREG_AND_REVIEW_GATE')
+          PY
+      - name: Check existing source and Colab secrets
+        env:
+          HAVE_KEY: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+          HAVE_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+          FULL13_SHA: ${{ vars.AVRORA_FULL13_SOURCE_SHA }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$HAVE_KEY" != "true" || "$HAVE_ADC" != "true" ]]; then
+            echo "BLOCKED_RESCP_EXISTING_PRIVATE_CREDENTIALS_ABSENT"; exit 2
+          fi
+          if [[ ! "$FULL13_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "BLOCKED_RESCP_PRIVATE_SOURCE_UNPINNED"; exit 2
+          fi
+      - name: Checkout pinned private FULL13 source read-only
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: ${{ vars.AVRORA_FULL13_SOURCE_SHA }}
+          path: private_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Verify 69,576 M15 historical bars and SHA pin
+        env:
+          AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
+        run: |
+          python - <<'PY'
+          import os
+          from tools.full13_wave_colab import load_private,parse_full
+          compressed,meta=load_private(os.environ['AVRORA_PRIVATE_CHECKOUT'])
+          data=parse_full(compressed,meta)
+          assert len(data)==78 and sum(map(len,data.values()))==69576
+          print('PASS_RESCP_FULL13_LOCKED_69576_M15')
+          PY
+      - name: Install existing Colab CLI and prepare temporary ADC
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
+          python tools/write_adc.py
+      - name: Colab CPU ResCP-lite FULL13 and independent CHECK2
+        env:
+          AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
+        run: |
+          set -euo pipefail
+          python tools/rescp_shadow.py run
+          python tools/rescp_shadow.py verify rescp_shadow_receipt.json
+      - name: Upload aggregate-only shadow result
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-rescp-lite-full13-${{ github.run_id }}
+          path: rescp_shadow_receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Erase credentials and private source
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]]; then rm -f "$GOOGLE_APPLICATION_CREDENTIALS"; fi
+          rm -rf "$GITHUB_WORKSPACE/private_source"
