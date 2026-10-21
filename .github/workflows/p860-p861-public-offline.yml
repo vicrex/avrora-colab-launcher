@@ -1,0 +1,108 @@
+name: AVRORA P860-P861 protected-source offline verification (public runner)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p860-p861-public-offline.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/p860-p861-public-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  private-snapshot-offline:
+    # Never expose a private deploy key to third-party pull request authors.
+    if: ${{ github.actor == 'vicrex' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == 'vicrex/avrora-colab-launcher') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PYTHONDONTWRITEBYTECODE: "1"
+      AVRORA_P860_OWNER_ENABLED: "NO"
+      AVRORA_P861_OWNER_ENABLED: "NO"
+    steps:
+      - name: Checkout public orchestrator only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Python 3.12 (no external libraries required)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Reject missing existing read-only private source credential
+        env:
+          KEY_PRESENT: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+        run: |
+          set -euo pipefail
+          test "$KEY_PRESENT" = "true" || { echo "BLOCKED_PRIVATE_SOURCE_READONLY_KEY_MISSING"; exit 2; }
+      - name: Checkout immutable PRIVATE P860/P861 gate snapshot
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          # Captured from vicrex/AVRORA PR #60; no model, trade data, or secrets.
+          ref: 2ddb11143b132cea051c37bb7293af150251a6ec
+          path: protected_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Require exact frozen original source blobs
+        working-directory: protected_source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "2ddb11143b132cea051c37bb7293af150251a6ec" || { echo "BLOCKED_CI_PRIVATE_REF_CHANGED"; exit 2; }
+          while read -r expected file; do
+            observed="$(git hash-object "$file")"
+            test "$observed" = "$expected" || { echo "BLOCKED_CI_SOURCE_BLOB_MISMATCH"; exit 2; }
+          done <<'BLOBS'
+          d1e80ac676ba897a9876314fa79cd04df88975a0 research/p860_recovery/provenance_gate.py
+          8a7e7693b41ff16a50813fd9a30141c96ae6010c research/p860_recovery/p861_quarantine_patch.py
+          5436a64738269cf64f80f7407034b29c45b0bf66 research/p860_recovery/test_provenance_gate.py
+          53ccab2f0a2e0c8de380f20e36f91cc6aaf411a1 research/p860_recovery/test_p861_quarantine_guard.py
+          78e4712e5f54ce5c689743d977d6c04da9b77a93 research/p860_recovery/P860_REFERENCE_10.json
+          09a181c1732fc6a1c04320b80d4c6a50fe68183b research/p860_recovery/P860_WHOLE_MAY_NEGATIVE_PROOF_20261021.json
+          BLOBS
+          echo "PASS_PRIVATE_CODE_MATCHES_PR60_SNAPSHOT"
+      - name: Run EXACT private P860/P861 gates on public GitHub runner
+        working-directory: protected_source
+        run: |
+          set -euo pipefail
+          python -m unittest -v \
+            research.p860_recovery.test_provenance_gate \
+            research.p860_recovery.test_p861_quarantine_guard
+      - name: Write aggregate-only public receipt (no source or model)
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          receipt = {
+            "schema": "AVRORA_P860_P861_PUBLIC_RUNNER_CI_V1",
+            "status": "PASS_OFFLINE_GATES_NOT_MODEL_PARITY",
+            "private_snapshot_repo": "vicrex/avrora-wave-source",
+            "private_snapshot_sha": "2ddb11143b132cea051c37bb7293af150251a6ec",
+            "source_origin": "vicrex/AVRORA PR #60",
+            "source_model_executed": False,
+            "archival_p860_probability_parity": "FAILED_0_OF_10",
+            "p861_live_bot_modified": False,
+            "real": "OFF", "holdout": "SEALED", "oos": False,
+            "note": "This is Python offline regression, not CI in private AVRORA, not an economic backtest."
+          }
+          Path("p860_p861_offline_public_receipt.json").write_text(
+            json.dumps(receipt, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+          print("PASS_PUBLIC_RUNNER_PRIVATE_OFFLINE_GATE")
+          PY
+      - name: Upload ONLY aggregate receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-p860-p861-offline-gate-${{ github.run_id }}
+          path: p860_p861_offline_public_receipt.json
+          retention-days: 14
+          if-no-files-found: error
+      - name: Erase temporary private snapshot
+        if: ${{ always() }}
+        run: rm -rf "$GITHUB_WORKSPACE/protected_source"
