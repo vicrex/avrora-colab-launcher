@@ -67,6 +67,27 @@ class FrozenH4Audit(unittest.TestCase):
         self.assertEqual(offered,3)
         self.assertEqual(len(trades),2)
 
+    def test_high_frequency_portfolio_remains_bounded_and_independent(self):
+        # Previously re-scanning the full accepted ledger made this O(N^2).
+        stream=[]
+        seed=self.events[0]
+        for i in range(12000):
+            x=dict(seed)
+            x["entry_t"]=seed["entry_t"]+900000*i
+            x["exit_t"]=x["entry_t"]+2700000
+            x["symbol"]=("BTCUSDT","ETHUSDT","SOLUSDT")[i%3]
+            x["pred"]=25.0
+            stream.append(x)
+        offered,accepted=a.portfolio(stream,"RIDGE_SIGN_0")
+        other_offered,other_accepted=b.proposals(stream,"RIDGE_SIGN_0")
+        self.assertEqual(offered,other_offered)
+        self.assertEqual(offered,12000)
+        self.assertEqual(len(accepted),len(other_accepted))
+        self.assertGreater(len(accepted),2000)
+        for x,y in zip(accepted,other_accepted):
+            self.assertEqual((x["entry_t"],x["symbol"],x["exit_t"]),
+                             (y[0],y[1],y[3]))
+
     def test_checker_rejects_tampered_summary(self):
         good=a.summarize(self.events,7)
         bad=json.loads(json.dumps(good))
