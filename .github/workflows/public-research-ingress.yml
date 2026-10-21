@@ -37,3 +37,34 @@ jobs:
           python-version: '3.12'
       - name: Parse public spec and verify durable GitHub receipt
         run: python -m tools.public_research_ingress
+
+  review_gate:
+    name: Register immutable evaluation-readiness decision (NO model execution)
+    needs: prereg
+    if: ${{ needs.prereg.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ inputs.issue_number }}
+      REAL: OFF
+      HOLDOUT: SEALED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify owner, exact prereg SHA and bot receipt; record review gate
+        run: python -m tools.public_research_review_gate
+      - name: Preserve aggregate-only gate decision (NEVER a backtest)
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-public-gate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evaluation_gate.json
+          if-no-files-found: error
+          retention-days: 30
