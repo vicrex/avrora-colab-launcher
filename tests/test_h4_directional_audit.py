@@ -88,6 +88,26 @@ class FrozenH4Audit(unittest.TestCase):
             self.assertEqual((x["entry_t"],x["symbol"],x["exit_t"]),
                              (y[0],y[1],y[3]))
 
+    def test_all_six_symbols_get_positions_with_fair_clock_rotation(self):
+        # Same timestamp: six eligible symbols, two available portfolio slots.
+        allsymbols=("BTCUSDT","ETHUSDT","LINKUSDT","NEARUSDT","SOLUSDT","XRPUSDT")
+        seed=self.events[0]
+        stream=[]
+        for i in range(120):
+            t=seed["entry_t"]+i*5*900000
+            for symbol in allsymbols:
+                item=dict(seed)
+                item.update(symbol=symbol,pred=50.,entry_t=t,exit_t=t)
+                stream.append(item)
+        offered,primary=a.portfolio(stream,"RIDGE_SIGN_0")
+        second_count,secondary=b.proposals(stream,"RIDGE_SIGN_0")
+        self.assertEqual((offered,len(primary)),(second_count,len(secondary)))
+        self.assertEqual(len(primary),240)
+        tally={s:sum(x["symbol"]==s for x in primary) for s in allsymbols}
+        self.assertTrue(all(25<=tally[s]<=55 for s in allsymbols),tally)
+        for x,y in zip(primary,secondary):
+            self.assertEqual((x["entry_t"],x["symbol"]),(y[0],y[1]))
+
     def test_checker_rejects_tampered_summary(self):
         good=a.summarize(self.events,7)
         bad=json.loads(json.dumps(good))
