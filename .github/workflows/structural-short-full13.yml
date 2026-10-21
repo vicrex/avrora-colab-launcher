@@ -1,0 +1,103 @@
+name: AVRORA structural trend SHORT FULL13 (research only)
+
+on:
+  push:
+    branches: [main]
+    paths: ["tools/structural_short.py", "tools/structural_short_check2.py", "research/structural_short_prereg_v1.json", ".github/workflows/structural-short-full13.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-private-wave-colab
+  cancel-in-progress: false
+
+jobs:
+  structural-short-full13:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      AVRORA_STRUCT_SHORT_ENABLED: "YES"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fail-closed safety, causal, brokerage and checker tests
+        run: python -m unittest discover -s tests -v
+      - name: Freeze registered research parameters prior to market inputs
+        run: |
+          python - <<'PY'
+          from tools.structural_short import load_manifest
+          m,pin=load_manifest()
+          assert len(m['candidate_ids'])==2
+          print('PASS_FROZEN_STRUCTURAL_SHORT_PREREG_SHA256='+pin)
+          PY
+      - name: Validate existing read-only source and Colab access
+        env:
+          HAVE_SOURCE_KEY: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+          HAVE_COLAB_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+          FULL13_PIN: ${{ vars.AVRORA_FULL13_SOURCE_SHA }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$HAVE_SOURCE_KEY" != "true" || "$HAVE_COLAB_ADC" != "true" ]]; then
+            echo 'BLOCKED_STRUCTURAL_SHORT_EXISTING_ACCESS'; exit 2
+          fi
+          if [[ ! "$FULL13_PIN" =~ ^[a-f0-9]{40}$ ]]; then
+            echo 'BLOCKED_STRUCTURAL_SHORT_FULL13_NOT_PINNED'; exit 2
+          fi
+      - name: Checkout known private FULL13 dataset at immutable revision
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: ${{ vars.AVRORA_FULL13_SOURCE_SHA }}
+          path: private_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Verify full historical panel pinned SHA, 69,576 M15 candles
+        env:
+          AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
+        run: |
+          python - <<'PY'
+          import os
+          from tools.full13_wave_colab import load_private,parse_full
+          compressed,meta=load_private(os.environ['AVRORA_PRIVATE_CHECKOUT'])
+          panel=parse_full(compressed,meta)
+          assert len(panel)==78 and sum(map(len,panel.values()))==69576
+          print('PASS_STRUCTURAL_SHORT_69576_PINNED_BARS')
+          PY
+      - name: Prepare existing Colab CLI and temporary ADC
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
+          python tools/write_adc.py
+      - name: One Colab FULL13 structural short experiment and independent CHECK2
+        env:
+          AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
+        run: |
+          set -euo pipefail
+          python tools/structural_short.py run
+          python tools/structural_short.py verify structural_short_receipt.json
+      - name: Upload aggregate-only research proof, never raw candles
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-structural-short-full13-${{ github.run_id }}
+          path: structural_short_receipt.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Erase temporary credentials and private historical dataset
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]]; then rm -f "$GOOGLE_APPLICATION_CREDENTIALS"; fi
+          rm -rf "$GITHUB_WORKSPACE/private_source"

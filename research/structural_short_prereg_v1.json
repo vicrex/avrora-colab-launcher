@@ -1,0 +1,52 @@
+{
+  "schema": "AVRORA_SHORT_BREAKOUT_FULL13_PREREG_V1",
+  "date_utc": "2026-10-21",
+  "source": "P816_SHA_PINNED_FULL13_PREWEEK220",
+  "dataset": "12 previously used discovery weeks + separate May auxiliary; NO OOS",
+  "candidate_ids": [
+    "TREND_BREAK_SHORT_V1",
+    "BREAK_ONLY_SHORT_CONTROL_V1"
+  ],
+  "entry": "On completed M15 candle t, close < minimum low of preceding 12 completed bars minus 0.10 ATR14; bearish real body >=0.35 ATR14, candle total range <=2.5 ATR14; 8-bar signal cooldown per symbol. Strict variant additionally requires EMA20<EMA60, EMA60 decreasing vs 8 bars earlier, and close<EMA20. Entry next M15 open (proxy, not proven maker fill).",
+  "exit": "Short stop=max(signal candle high, next open+1.25 ATR14); TP=entry-1.8*(stop-entry); stop-first intrabar; stop gaps filled at worse open; time stop after 12 bars at close. Do not enter without complete 12-bar future horizon.",
+  "money": "Initial equity 300 USDT, isolated 10x leverage proxy, notional <=500 USDT, stop-risk <=5 USDT per trade, 2 concurrent positions, max 1 per symbol, do not reuse collateral from open trades, no new positions when realized cash <=20 USDT. Primary net 20 bps per trade; stress 16, 25, 40 bps fixed-ledger; equity carry across 12 discovery weeks, May auxiliary separately reset. Rotating symbol priority by completed M15 timestamp only.",
+  "fixed_parameters": {
+    "support_lookback": 12,
+    "break_atr": 0.1,
+    "body_atr": 0.35,
+    "max_bar_range_atr": 2.5,
+    "ema_fast": 20,
+    "ema_slow": 60,
+    "ema_slope_lag": 8,
+    "signal_cooldown_bars": 8,
+    "atr_period": 14,
+    "stop_atr": 1.25,
+    "reward_r": 1.8,
+    "time_bars": 12,
+    "min_notional": 25,
+    "max_notional": 500,
+    "max_stop_risk_usdt": 5,
+    "start_equity_usdt": 300,
+    "min_equity_for_entry_usdt": 20,
+    "max_leverage": 10,
+    "max_active": 2,
+    "primary_roundtrip_cost_bps": 20,
+    "stress_roundtrip_cost_bps": [
+      16,
+      20,
+      25,
+      40
+    ]
+  },
+  "falsification": "Compare trend-filtered structural shorts vs same breakdown without trend; report early and late six discovery weeks, per-week and per-symbol trades, net PnL, DD, missed margin/concurrency, equity depletion; no promise of liquidity data, maker fills or exchange liquidation realism.",
+  "safety": {
+    "real": "OFF",
+    "holdout": "SEALED",
+    "oos": false,
+    "slippage": false,
+    "funding": false,
+    "maker_fill_proven": false,
+    "orderbook_available": false,
+    "promotion": "NEVER_FROM_DISCOVERY"
+  }
+}
