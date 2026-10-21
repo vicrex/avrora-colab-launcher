@@ -50,3 +50,21 @@ manual dispatch. It reuses the existing private dataset checkout and
 Colab credentials, first checks the public Issue #15 prereg/gate receipt.
 The verified output is aggregate-only and marked
 DIAGNOSTICS_ONLY_NO_PROMOTION. No scheduled repeats.
+
+## V2 correction: no alphabetical portfolio allocation
+
+V1 diagnostic trade-frequency and PnL summaries had a structural preference:
+at the same entry timestamp, lexicographically first symbols occupied the
+two allowed slots. In the dense ungated H4 strategies this strongly favors
+BTC/ETH and does NOT demonstrate frequent trades across all six instruments.
+V1 artifact remains preserved but should not be cited as six-symbol economic
+evidence.
+
+V2 uses only the finalized entry timestamp and a **predefined deterministic
+rotation of the six-symbol priority** every four M15 bars. This is not a
+data-dependent optimizer; it does not use outcomes or predicted returns to
+rank symbols. Primary and independent CHECK2 independently reproduce the
+rotation. Each selector now records actual accepted trades, trades/day, and
+20bps net PnL by each symbol. V2 stays discovery-only and is not OOS or live
+evidence. The fair-allocation rule was fixed after inspecting V1 aggregate
+evidence, so do not use V2 as independent confirmation of profitability.
