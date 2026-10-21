@@ -42,7 +42,9 @@ def proposals(rows,mode):
         candidates.append((x["entry_t"],x["symbol"],x["period"],x["exit_t"],
                            side,TRADE_SIZE*side*(x["exit"]/x["entry"]-1),
                            x["entry"],x["exit"]))
-    candidates.sort(key=lambda r:r[:3])
+    # Rotating eligible symbol priority is deterministic from entry timestamp.
+    symbols=("BTCUSDT","ETHUSDT","LINKUSDT","NEARUSDT","SOLUSDT","XRPUSDT")
+    candidates.sort(key=lambda r:(r[0],(symbols.index(r[1])-(r[0]//900000//H)%6)%6,r[2]))
     retained=[]
     # Independent active slots, constant-time capacity check rather than
     # re-scanning all historical accepted trades on every new signal.
@@ -70,8 +72,14 @@ def aggregate(rows,days):
         offered,ledger=proposals(rows,mode)
         pnl=sum(z[5] for z in ledger)
         net={str(bp):round(pnl-TRADE_SIZE*bp/10000*len(ledger),6) for bp in COSTS}
+        detail={}
+        for symbol in ("BTCUSDT","ETHUSDT","LINKUSDT","NEARUSDT","SOLUSDT","XRPUSDT"):
+            selected=[x for x in ledger if x[1]==symbol]
+            net20=sum(row[5]-TRADE_SIZE*.002 for row in selected)
+            detail[symbol]={"trades":len(selected),"trades_per_day":round(len(selected)/days,6),
+                            "net20_usdt":round(net20,6)}
         perf[mode]={
-            "signals_proposed":offered,
+            "signals_proposed":offered,"by_symbol":detail,
             "trades":len(ledger),
             "trades_per_symbol_day":round(len(ledger)/(days*6),6),
             "gross_usdt":round(pnl,6),
