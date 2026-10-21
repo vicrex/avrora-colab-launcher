@@ -1,0 +1,39 @@
+name: AVRORA public research ingress - prereg only
+
+on:
+  issues:
+    types: [opened, reopened, edited]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Public owner-authored proposal issue number
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: public-ingress-serial-prereg
+  cancel-in-progress: false
+
+jobs:
+  prereg:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.issue.user.login == 'vicrex' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ inputs.issue_number }}
+      REAL: OFF
+      HOLDOUT: SEALED
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Parse public spec and verify durable GitHub receipt
+        run: python -m tools.public_research_ingress
