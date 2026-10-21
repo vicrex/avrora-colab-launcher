@@ -16,8 +16,8 @@ except ImportError:
     import rescp_shadow as ridge
     import h4_directional_check2 as checker
 
-SCHEMA = "AVRORA_H4_DIRECTIONAL_EDGE_AUDIT_V1"
-CANDIDATE = "FROZEN_RIDGE16_H4_DIRECTIONAL_AUDIT_01"
+SCHEMA = "AVRORA_H4_DIRECTIONAL_EDGE_AUDIT_V2_FAIR_SLOTS"
+CANDIDATE = "FROZEN_RIDGE16_H4_DIRECTIONAL_AUDIT_02_FAIR_SLOTS"
 MARKER = "AVRORA_H4_AUDIT_VERIFIED="
 MODES = ("RIDGE_SIGN_0", "RIDGE_SIGN_10", "RIDGE_SIGN_20", "MOM4_SIGN", "REVERSE_MOM4")
 STRESS_BPS = (16, 20, 25, 40)
@@ -67,7 +67,9 @@ def portfolio(events,mode):
         side=side_for(row,mode)
         if not side:continue
         proposals.append({**row,"side":side,"gross":NOTIONAL*side*(row["exit"]/row["entry"]-1)})
-    proposals.sort(key=lambda x:(x["entry_t"],x["symbol"],x["period"]))
+    # Prevent lexical BTC/ETH priority; deterministic clock-time rotating order.
+    proposals.sort(key=lambda x:(x["entry_t"],
+        (data_source.SYMBOLS.index(x["symbol"])-(x["entry_t"]//900000//H)%len(data_source.SYMBOLS))%len(data_source.SYMBOLS),x["period"]))
     retained=[]
     active=[]  # Only currently open positions: bounded by capacity of two.
     for x in proposals:
@@ -93,8 +95,14 @@ def summarize(events,days):
         gross=sum(x["gross"] for x in trades)
         count=len(trades)
         costs={str(k):round(gross-NOTIONAL*k/10000*count,6) for k in STRESS_BPS}
+        by_symbol={}
+        for symbol in data_source.SYMBOLS:
+            book=[x for x in trades if x["symbol"]==symbol]
+            net=sum(x["gross"]-NOTIONAL*.002 for x in book)
+            by_symbol[symbol]={"trades":len(book),"trades_per_day":round(len(book)/days,6),
+                               "net20_usdt":round(net,6)}
         methods[mode]={
-            "signals_proposed":proposed,"trades":count,
+            "signals_proposed":proposed,"trades":count,"by_symbol":by_symbol,
             "trades_per_symbol_day":round(count/(days*6),6),
             "gross_usdt":round(gross,6),
             "net_by_cost_bps_usdt":costs,
@@ -132,6 +140,7 @@ def execute(data,meta):
         "early_weeks":weeks[:6],"late_weeks":weeks[6:],
         "horizon_bars":H,"warmup":data_source.WARMUP,
         "baselines":list(MODES),"stress_bps":list(STRESS_BPS),
+        "allocation":"ROTATE_SIX_SYMBOL_PRIORITY_EACH_H_BARS_MAX_TWO_SLOTS",
         "split_results":output,
         "costs_proxy":"NEXT_BAR_OPEN_CLOSE_AT_H4_16_20_25_40_BPS",
         "maker_fills_proven":False,"slippage_modelled":False,"funding_modelled":False,
