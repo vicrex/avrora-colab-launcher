@@ -60,8 +60,14 @@ def main():
         stage="LIST_FOLDER"
         listing=requests.get(API,params={"q":q,"pageSize":10,"fields":"files(id,name,size),nextPageToken"},
                              headers=headers,timeout=40)
-        listing.raise_for_status()
-        existing=listing.json().get("files",[])
+        # ADC tokens for Colab may allow file creation but not listing a user folder.
+        # We try a single create on the FIRST GitHub attempt; retries fail closed.
+        can_list=listing.status_code==200
+        if not can_list:
+            if listing.status_code!=403 or os.environ.get("GITHUB_RUN_ATTEMPT","1")!="1":
+                listing.raise_for_status()
+            print("DRIVE_FOLDER_LIST_FORBIDDEN_FIRST_ATTEMPT_CREATE_ONLY")
+        existing=listing.json().get("files",[]) if can_list else []
         if len(existing)>1:
             raise RuntimeError("ambiguous existing artifacts")
         if existing:
@@ -98,9 +104,11 @@ def main():
         receipt=Path(args.receipt)
         if receipt.exists():raise RuntimeError("duplicate receipt file")
         receipt.write_text(json.dumps(out,sort_keys=True,separators=(",",":"))+"\n")
-    except Exception:
-        # This must not print HTTP auth headers or connector tokens.
-        raise SystemExit("BLOCKED_PRIVATE_DRIVE_STAGE_"+stage)
+    except Exception as exc:
+        # Classify only the failure type and HTTP status. Never print URLs, auth headers or tokens.
+        status=getattr(getattr(exc,"response",None),"status_code",None)
+        suffix=("HTTP_"+str(status)) if type(status) is int else "INTERNAL"
+        raise SystemExit("BLOCKED_PRIVATE_DRIVE_STAGE_"+stage+"_"+suffix)
     print("PASS_PRIVATE_DRIVE_SHA_ACK",out["drive_file_id"],out["sha256"],out["bytes"])
 
 if __name__=="__main__":main()
