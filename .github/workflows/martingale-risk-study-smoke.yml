@@ -21,7 +21,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_CODE_SHA: 92366f17beb4e75e5b837d36abfbe05ff2f9fa19
+      PRIVATE_CODE_SHA: 02175fe93f932c15b6b70ba3bf027eb1385e9182
       PRIVATE_DATA_SHA: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
     steps:
       - name: Verify existing readonly SSH and Drive ADC credentials present
@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: 92366f17beb4e75e5b837d36abfbe05ff2f9fa19
+          ref: 02175fe93f932c15b6b70ba3bf027eb1385e9182
           path: private_code
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
           persist-credentials: false
@@ -103,12 +103,12 @@ jobs:
           assert j['schema']=='AVRORA_P816_MARTINGALE_COMPARISON_DISCOVERY_SHADOW_V1'
           assert j['real']=='OFF' and j['holdout']=='SEALED'
           assert j['maker_fill_proven'] is False and j['oos_proven'] is False
-          assert j['record_count']==480 and len(j['results'])==480
+          assert j['record_count']==960 and len(j['results'])==960
           src=j.copy();digest=src.pop('receipt_sha256')
           assert hashlib.sha256(json.dumps(src,sort_keys=True,ensure_ascii=False,
               separators=(',',':'),allow_nan=False).encode()).hexdigest()==digest
           assert len(set((x['candidate_index'],x['split'],x['diagnostic_scope'],
-              x['cost_bps'],x['policy']) for x in j['results']))==480
+              x['cost_bps'],x['policy']) for x in j['results']))==960
           counts={}
           for p in ('FIXED','CAPPED_1P5_AFTER_LOSS','CAPPED_DOUBLE_AFTER_LOSS',
                     'ANTI_1P5_AFTER_WIN','DRAWDOWN_HALF_RISK'):
