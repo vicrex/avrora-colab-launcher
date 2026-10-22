@@ -1,0 +1,111 @@
+name: AVRORA SQ05 asset-by-mechanism ablation FULL13 (no live trading)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "research/sq05_asset_mechanism_ablation_prereg_v1.json"
+      - "tools/sq05_asset_ablation.py"
+      - ".github/workflows/sq05-asset-ablation-full13.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-sq05-asset-ablation-full13
+  cancel-in-progress: false
+
+jobs:
+  asset-mechanism-full13:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      AVRORA_GRID_SHADOW_ENABLED: "YES"
+      AVRORA_ASSET_ABLATION_ENABLED: "YES"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit and registry safety tests, no market computation
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -v
+          python - <<'PY'
+          from tools.sq05_asset_ablation import prereg,parameter_pin
+          m,sha=prereg()
+          params,pin,gridsha,specsha=parameter_pin()
+          assert len(m['exact_ordered_scenarios'])==6
+          print('PASS_SQ05_COIN_ABLATION_PREREG_SHA256='+sha)
+          print('PASS_ORIGINAL_SQ05_SPEC_SHA256='+specsha)
+          PY
+      - name: Check existing public launcher source pin and Colab secrets
+        env:
+          HAVE_SOURCE_KEY: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+          HAVE_COLAB_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+          PINNED_SHA: ${{ vars.AVRORA_FULL13_SOURCE_SHA }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAVE_SOURCE_KEY" != "true" || "$HAVE_COLAB_ADC" != "true" ]]; then
+            echo 'BLOCKED_ABLATION_NO_EXISTING_CREDENTIALS'; exit 2
+          fi
+          if [[ ! "$PINNED_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo 'BLOCKED_ABLATION_SOURCE_PIN'; exit 2
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: ${{ vars.AVRORA_FULL13_SOURCE_SHA }}
+          path: private_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Confirm original 69,576 source bars and genuine 220-bar preweek warmup
+        env:
+          AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
+        run: |
+          python - <<'PY'
+          import os
+          from tools.full13_wave_colab import load_private,parse_full
+          compressed,meta=load_private(os.environ['AVRORA_PRIVATE_CHECKOUT'])
+          parsed=parse_full(compressed,meta)
+          assert len(parsed)==78 and sum(map(len,parsed.values()))==69576
+          print('PASS_FULL13_ASSET_REPLAY_READ_ONLY_SOURCE')
+          PY
+      - name: Prepare existing free Colab CPU authentication
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
+          python tools/write_adc.py
+      - name: Replay six preregistered coin portfolios from one pinned Colab FULL13 panel, independent CHECK2
+        env:
+          AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
+        run: |
+          set -euo pipefail
+          python -m tools.sq05_asset_ablation run
+          python -m tools.sq05_asset_ablation verify sq05_asset_ablation_receipt.json
+      - name: Preserve aggregate-only portfolio and symbol × week receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-sq05-asset-ablation-${{ github.run_id }}
+          path: |
+            sq05_asset_ablation_receipt.json
+            research/sq05_asset_mechanism_ablation_prereg_v1.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Wipe read-only data checkout and temporary ADC
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
+          rm -rf "$GITHUB_WORKSPACE/private_source"
