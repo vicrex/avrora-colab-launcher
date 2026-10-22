@@ -1,0 +1,87 @@
+{
+  "schema": "AVRORA_SQ05_ASSET_MECHANISM_ABLATION_PREREG_V1",
+  "date_utc": "2026-10-22",
+  "source_experiment": "AVRORA_VECTOR_SQUEEZE_GRID_FULL13_V1",
+  "source_run": "39724978481",
+  "purpose": "Retro asset-by-mechanism attribution checking portfolio reallocation, NOT previously-unseen OOS or trading approval",
+  "first_principles": "Past 16 WAVE5 and 12 SQ asset PnLs were viewed BEFORE choosing subsets. All resulting PnL is post-selection exploratory; no new statistical alpha claim.",
+  "preexisting_chosen_signal": {
+    "id": "SQ05",
+    "family": "SQUEEZE_BREAK_SHORT_V1",
+    "grid_source": "research/vector_squeeze_grid_prereg_v1.json",
+    "range_ratio": 0.7,
+    "break_atr": 0.05,
+    "body_atr": 0.25
+  },
+  "exact_ordered_scenarios": [
+    {
+      "id": "ALL6_CONTROL",
+      "symbols": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "LINKUSDT",
+        "NEARUSDT",
+        "SOLUSDT",
+        "XRPUSDT"
+      ]
+    },
+    {
+      "id": "SOL_ONLY",
+      "symbols": [
+        "SOLUSDT"
+      ]
+    },
+    {
+      "id": "XRP_ONLY",
+      "symbols": [
+        "XRPUSDT"
+      ]
+    },
+    {
+      "id": "SOL_XRP",
+      "symbols": [
+        "SOLUSDT",
+        "XRPUSDT"
+      ]
+    },
+    {
+      "id": "SOL_XRP_LINK",
+      "symbols": [
+        "LINKUSDT",
+        "SOLUSDT",
+        "XRPUSDT"
+      ]
+    },
+    {
+      "id": "BTC_ETH_NEAR_NEG_CONTROL",
+      "symbols": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "NEARUSDT"
+      ]
+    }
+  ],
+  "risk_and_execution": "Reuse unchanged reviewed primary portfolio 300 USDT equity, max500 USDT notional, max5 USDT initial stop risk, max2 slots, one per coin, stop-first, gaps, 10x margin proxy; independent full-ledger CHECK2. Next M15 open proxy, not real maker fill; funding and slippage not modeled.",
+  "costs_bps": [
+    16,
+    20,
+    25,
+    40
+  ],
+  "data": {
+    "source_panel_sha256": "7e1bed08982de6e5ff1ec60cbd8afef68067298adcffd590149b43a099dbb297",
+    "bars": 69576,
+    "periods": 13,
+    "warmup_per_group": 220,
+    "used_discovery_days": 84,
+    "may_aux_days": 7,
+    "oos": false
+  },
+  "prereg_acceptance": "Descriptive only: compare net20 and net25, SOL-only vs ALL6 and no-trade; compute week × symbol cross-tab with independent full-ledger CHECK2 and exact reconciliations. Do not promote by retrospective positivity; all six scenarios share past observations and prior selection. To seek real alpha freeze ONE mechanism/regime gate then prospectively evaluate on genuinely unused data with realistic maker/taker fill and multiple-testing correction.",
+  "permissions": {
+    "real": "OFF",
+    "holdout": "SEALED",
+    "new_cron": false,
+    "ChatGPT_Work": false
+  }
+}
