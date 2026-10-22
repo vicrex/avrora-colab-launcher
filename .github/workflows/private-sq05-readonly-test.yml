@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: private-sq05-readonly-validation
@@ -24,33 +23,16 @@ jobs:
       HOLDOUT: "SEALED"
       CODE_SHA: 213702dfbd11919029ec98edc0fc1c52b4faaa88
     steps:
-      - name: Obtain short-lived GitHub OIDC read token for PRIVATE AVRORA
-        if: ${{ vars.AVRORA_SQ05_AUTH_MODE != 'deploy_key' }}
-        id: octo_sts
-        uses: octo-sts/action@2ea63db88c2be45e0d1dd46ecb820021eec01439
-        with:
-          scope: vicrex/AVRORA
-          identity: avrora-public-sq05-read
-      - name: Verify dedicated deploy key (optional fallback)
-        if: ${{ vars.AVRORA_SQ05_AUTH_MODE == 'deploy_key' }}
+      - name: Verify dedicated read-only AVRORA deploy key
         env:
           HAVE_CODE_KEY: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
         run: |
-          if [[ "$HAVE_CODE_KEY" != "true" ]]; then
+          set -euo pipefail
+          if [[ "$HAVE_CODE_KEY" != 'true' ]]; then
             echo "BLOCKED_PRIVATE_AVRORA_READONLY_CODE_KEY_MISSING"
             exit 2
           fi
-      - name: Checkout PRIVATE AVRORA with short-lived OIDC
-        if: ${{ vars.AVRORA_SQ05_AUTH_MODE != 'deploy_key' }}
-        uses: actions/checkout@v4
-        with:
-          repository: vicrex/AVRORA
-          ref: 213702dfbd11919029ec98edc0fc1c52b4faaa88
-          path: private_code
-          persist-credentials: false
-          token: ${{ steps.octo_sts.outputs.token }}
-      - name: Checkout PRIVATE AVRORA with dedicated deploy key (fallback)
-        if: ${{ vars.AVRORA_SQ05_AUTH_MODE == 'deploy_key' }}
+      - name: Checkout pinned PRIVATE AVRORA via isolated read-only SSH key
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
