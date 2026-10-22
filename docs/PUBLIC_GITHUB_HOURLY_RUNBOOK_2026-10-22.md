@@ -1,5 +1,11 @@
 # AVRORA — public GitHub hourly runbook (2026-10-22)
 
+## MANDATORY EXECUTION TOPOLOGY (user-confirmed, 2026-10-22)
+
+**ALL AVRORA launches, CI/testing, researcher jobs, Full13 Colab orchestration and independent CHECK2 happen from the PUBLIC GitHub repository [vicrex/avrora-colab-launcher](https://github.com/vicrex/avrora-colab-launcher), or through an explicitly reviewed job dispatched from that public executor.** The private [vicrex/AVRORA](https://github.com/vicrex/AVRORA) is source-of-truth for private code, private graph, issues and the handoff; its Actions runner is **NOT a prerequisite and never a reason to declare public launches blocked**.
+
+For PR #62 private graph importer, run offline verification in the **existing public** launcher with a reviewed read-only pinned checkout/approved limited adapter; never copy private code/graph/data into a PUBLIC artifact. Only then merge the private PR and deliver new private graph snapshot via Drive with SHA readback and separate ACK. Do not silently call the graph updated merely because public calculations finished. No ChatGPT Work, no new timers, REAL OFF, HOLDOUT SEALED.
+
 ## Immutable operating constraints
 - Execution via existing public GitHub Actions only; **never** ChatGPT Work, Cloud Browser, Computer Use, new timers, paid services, or live trading.
 - REAL=OFF; HOLDOUT=SEALED. Do not open holdout. Never claim maker fills, OOS, profitability or autonomy without evidence.
@@ -37,7 +43,7 @@
 - Event exists, job skipped: inspect reusable workflow `if` and repository vars.
 - Job starts, Colab fails: inspect sanitized logs, credential presence, SHA pin, CHECK2, 69,576 bars and source validation; preserve explicit failure.
 - Artifact exists, Drive missing: transfer once; independently read back and hash.
-- Private runner absent: mark pre-runner blocked; do not blindly rerun.
+- Private runner absent: informational private-repository condition only; do not block or rerun the PUBLIC executor. Route tests/research through public Actions using reviewed pinned source checkout.
 
 ## Change log
 - 2026-10-22: audited current public workflow source. Existing cron is `7 * * * *`; reusable private-wave job has variable gate. No confirmed root cause for missing event from YAML alone. This runbook documents the verification and repair protocol. No workflow code or timer changed by this documentation commit.
