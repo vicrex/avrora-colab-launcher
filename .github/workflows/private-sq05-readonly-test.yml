@@ -21,7 +21,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      CODE_SHA: 766248592a0afbdcf29ca19e4acacc9d27562755
+      CODE_SHA: a301c05b2c95bde72869ef133907f78c5731f4f1
     steps:
       - name: Verify dedicated read-only AVRORA deploy key
         env:
@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: 766248592a0afbdcf29ca19e4acacc9d27562755
+          ref: a301c05b2c95bde72869ef133907f78c5731f4f1
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -47,7 +47,7 @@ jobs:
           python-version: '3.12'
       - name: Ensure pinned checkout and byte-exact migrated strategies
         env:
-          PARENT_SHA: 766248592a0afbdcf29ca19e4acacc9d27562755
+          PARENT_SHA: a301c05b2c95bde72869ef133907f78c5731f4f1
         run: |
           set -euo pipefail
           cd private_code
@@ -139,7 +139,7 @@ jobs:
       - name: Publish non-sensitive test status only
         if: ${{ success() }}
         run: |
-          printf '{"schema":"AVRORA_PRIVATE_SQ05_READONLY_CI_V1","status":"PASS_OFFLINE_TESTS_ONLY","pinned_private_sha":"766248592a0afbdcf29ca19e4acacc9d27562755","real":"OFF","holdout":"SEALED","economic_forward_test":false,"maker_fill_proven":false}\n' > private_sq05_check_receipt.json
+          printf '{"schema":"AVRORA_PRIVATE_SQ05_READONLY_CI_V1","status":"PASS_OFFLINE_TESTS_ONLY","pinned_private_sha":"a301c05b2c95bde72869ef133907f78c5731f4f1","real":"OFF","holdout":"SEALED","economic_forward_test":false,"maker_fill_proven":false}\n' > private_sq05_check_receipt.json
       - uses: actions/upload-artifact@v4
         if: ${{ success() }}
         with:
