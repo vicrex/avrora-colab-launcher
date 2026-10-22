@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: private-sq05-readonly-validation
@@ -21,21 +22,39 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      CODE_SHA: 48051a6efc2c4c29370ed12ee45f99da1b5f0acd
+      CODE_SHA: 8aabccdbed96d6597c4b6590fca60184d7a0efb0
     steps:
-      - name: Check narrowly scoped private-code read credential
+      - name: Obtain short-lived GitHub OIDC read token for PRIVATE AVRORA
+        if: ${{ vars.AVRORA_SQ05_AUTH_MODE != 'deploy_key' }}
+        id: octo_sts
+        uses: octo-sts/action@2ea63db88c2be45e0d1dd46ecb820021eec01439
+        with:
+          scope: vicrex/AVRORA
+          identity: avrora-public-sq05-read
+      - name: Verify dedicated deploy key (optional fallback)
+        if: ${{ vars.AVRORA_SQ05_AUTH_MODE == 'deploy_key' }}
         env:
           HAVE_CODE_KEY: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
         run: |
-          set -euo pipefail
-          if [[ "$HAVE_CODE_KEY" != 'true' ]]; then
-            echo 'BLOCKED_PRIVATE_AVRORA_READONLY_CODE_KEY_MISSING'
+          if [[ "$HAVE_CODE_KEY" != "true" ]]; then
+            echo "BLOCKED_PRIVATE_AVRORA_READONLY_CODE_KEY_MISSING"
             exit 2
           fi
-      - uses: actions/checkout@v4
+      - name: Checkout PRIVATE AVRORA with short-lived OIDC
+        if: ${{ vars.AVRORA_SQ05_AUTH_MODE != 'deploy_key' }}
+        uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: 48051a6efc2c4c29370ed12ee45f99da1b5f0acd
+          ref: 8aabccdbed96d6597c4b6590fca60184d7a0efb0
+          path: private_code
+          persist-credentials: false
+          token: ${{ steps.octo_sts.outputs.token }}
+      - name: Checkout PRIVATE AVRORA with dedicated deploy key (fallback)
+        if: ${{ vars.AVRORA_SQ05_AUTH_MODE == 'deploy_key' }}
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: 8aabccdbed96d6597c4b6590fca60184d7a0efb0
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -46,7 +65,7 @@ jobs:
           python-version: '3.12'
       - name: Ensure pinned checkout and byte-exact migrated strategies
         env:
-          PARENT_SHA: 48051a6efc2c4c29370ed12ee45f99da1b5f0acd
+          PARENT_SHA: 8aabccdbed96d6597c4b6590fca60184d7a0efb0
         run: |
           set -euo pipefail
           cd private_code
@@ -102,10 +121,19 @@ jobs:
             exit 5
           fi
           echo 'PASS_PRIVATE_FIRST_SEEN_SOURCE_GATES'
+      - name: Independently assert frozen SQ05 signal-by-signal parity
+        run: |
+          set -euo pipefail
+          cd private_code
+          if ! python -m unittest research.insight_map.test_sol_sq05_frozen_engine_parity > "$RUNNER_TEMP/parity_tests.log" 2>&1; then
+            echo "BLOCKED_SQ05_LEGACY_FORWARD_PARITY"
+            exit 6
+          fi
+          echo "PASS_PRIVATE_SQ05_FROZEN_ENGINE_PARITY"
       - name: Publish non-sensitive test status only
         if: ${{ success() }}
         run: |
-          printf '{"schema":"AVRORA_PRIVATE_SQ05_READONLY_CI_V1","status":"PASS_OFFLINE_TESTS_ONLY","pinned_private_sha":"48051a6efc2c4c29370ed12ee45f99da1b5f0acd","real":"OFF","holdout":"SEALED","economic_forward_test":false,"maker_fill_proven":false}\n' > private_sq05_check_receipt.json
+          printf '{"schema":"AVRORA_PRIVATE_SQ05_READONLY_CI_V1","status":"PASS_OFFLINE_TESTS_ONLY","pinned_private_sha":"8aabccdbed96d6597c4b6590fca60184d7a0efb0","real":"OFF","holdout":"SEALED","economic_forward_test":false,"maker_fill_proven":false}\n' > private_sq05_check_receipt.json
       - uses: actions/upload-artifact@v4
         if: ${{ success() }}
         with:
@@ -117,4 +145,4 @@ jobs:
         if: ${{ always() }}
         run: |
           rm -rf "$GITHUB_WORKSPACE/private_code"
-          rm -f "$RUNNER_TEMP/sq05_tests.log" "$RUNNER_TEMP/probe_tests.log" "$RUNNER_TEMP/firstseen_tests.log"
+          rm -f "$RUNNER_TEMP/sq05_tests.log" "$RUNNER_TEMP/probe_tests.log" "$RUNNER_TEMP/firstseen_tests.log" "$RUNNER_TEMP/parity_tests.log"
