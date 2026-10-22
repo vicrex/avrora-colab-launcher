@@ -43,6 +43,7 @@ def main():
     canonical=json.dumps(audit,sort_keys=True,ensure_ascii=False,separators=(",",":"),allow_nan=False)
     if hashlib.sha256(canonical.encode()).hexdigest()!=report_sha:
         raise SystemExit("BLOCKED_PRIVATE_DRIVE_REPORT_SHA")
+    stage="CREDENTIAL_PARSE"
     try:
         import requests
         from google.oauth2.credentials import Credentials
@@ -51,10 +52,12 @@ def main():
         if cred_info.get("type")!="authorized_user":
             raise RuntimeError("wrong adc")
         credentials=Credentials.from_authorized_user_info(cred_info)
+        stage="TOKEN_REFRESH"
         credentials.refresh(Request())
         headers={"Authorization":"Bearer "+credentials.token}
         # Same GitHub run + version => same deterministic filename. Avoid duplicates.
         q=f"name = '{args.name}' and '{FOLDER}' in parents and trashed = false"
+        stage="LIST_FOLDER"
         listing=requests.get(API,params={"q":q,"pageSize":10,"fields":"files(id,name,size),nextPageToken"},
                              headers=headers,timeout=40)
         listing.raise_for_status()
@@ -71,17 +74,20 @@ def main():
             payload=(f"--{delim}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".encode()
                       +meta+f"\r\n--{delim}\r\nContent-Type: application/json\r\n\r\n".encode()
                       +data+f"\r\n--{delim}--\r\n".encode())
+            stage="UPLOAD_NEW"
             response=requests.post(UPLOAD,
                         headers={**headers,"Content-Type":content_type},
                         data=payload,timeout=120)
             response.raise_for_status()
             file_id=response.json()["id"]
+        stage="DOWNLOAD_READBACK"
         response=requests.get(f"{API}/{file_id}",params={"alt":"media"},
                               headers=headers,timeout=120)
         response.raise_for_status()
         raw=response.content
         if raw!=data or hashlib.sha256(raw).hexdigest()!=digest:
             raise RuntimeError("byte level readback mismatch")
+        stage="ACK_RECEIPT"
         out={"schema":"AVRORA_PRIVATE_DRIVE_READBACK_ACK_V1",
              "status":"DRIVE_SHA_READBACK_VERIFIED",
              "drive_file_id":file_id,
@@ -94,7 +100,7 @@ def main():
         receipt.write_text(json.dumps(out,sort_keys=True,separators=(",",":"))+"\n")
     except Exception:
         # This must not print HTTP auth headers or connector tokens.
-        raise SystemExit("BLOCKED_PRIVATE_DRIVE_UPLOAD_OR_SHA_READBACK")
+        raise SystemExit("BLOCKED_PRIVATE_DRIVE_STAGE_"+stage)
     print("PASS_PRIVATE_DRIVE_SHA_ACK",out["drive_file_id"],out["sha256"],out["bytes"])
 
 if __name__=="__main__":main()
