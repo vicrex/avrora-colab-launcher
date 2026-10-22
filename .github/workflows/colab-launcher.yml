@@ -14,6 +14,12 @@ on:
   # Hourly schedule; only performs remote Colab work AFTER enabling the repository variable.
   schedule:
     - cron: "7 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/colab-launcher.yml'
+      - 'tools/forward_m15_transport.py'
+      - 'tests/test_forward_m15_transport.py'
 
 permissions:
   contents: read
@@ -85,3 +91,31 @@ jobs:
           if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
             rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
           fi
+
+  capture-forward-m15:
+    name: Public Bybit M15 transport (no trading/strategy)
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify transport-only unit tests without internet
+        run: python -m unittest discover -s tests -p 'test_forward_m15_transport.py' -v
+      - name: Collect six public Bybit closed-candle responses with receipt timestamps and SHA-256
+        run: |
+          set -euo pipefail
+          python -m tools.forward_m15_transport --output forward_m15_capture
+      - name: Preserve public market-data provenance for private Drive ingestion
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-public-forward-m15-${{ github.run_id }}
+          path: forward_m15_capture/
+          if-no-files-found: error
+          retention-days: 2
