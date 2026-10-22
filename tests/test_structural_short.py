@@ -56,6 +56,44 @@ class StructuralShortTests(unittest.TestCase):
           [{k:v for k,v in e.items() if k!="bars"} for e in later
            if e["signal_i"]<510-a.MAX_DURATION-1])
 
+    def test_new_retest_is_causal_and_recomputed_independently(self):
+        params=self.manifest["fixed_parameters"]
+        original=a.find_events(self.series,"2026-07-01","BTCUSDT",params)
+        self.assertGreater(len(original),0)
+        first=original[0]
+        t=first["signal_i"];k=t+1
+        support=min(self.series[j][3] for j in range(t-12,t))
+        atr=first["atr"]
+        changed=list(self.series)
+        op=support+0.30*atr
+        close=support-0.30*atr
+        changed[k]=(changed[k][0],op,support+0.35*atr,
+                    close-0.10*atr,close)
+        left=a.find_retest_events(changed,"2026-07-01","BTCUSDT",params)
+        right=b.derive_retests(changed,"2026-07-01","BTCUSDT")
+        self.assertGreaterEqual(len(left),1)
+        self.assertEqual([x["signal_i"] for x in left],
+                         [x["signal_i"] for x in right])
+        for x,y in zip(left,right):
+            b.assert_equal({key:value for key,value in x.items() if key!="bars"},
+                           {key:value for key,value in y.items() if key!="bars"})
+            self.assertEqual(x["entry_t"],changed[x["signal_i"]+1][0])
+            self.assertLess(x["signal_t"],x["entry_t"])
+        self.assertTrue(any(x["signal_i"]==k for x in left))
+
+    def test_new_retest_requires_closed_rejection_not_future_bounce(self):
+        p=self.manifest["fixed_parameters"]
+        first=a.find_events(self.series,"2026-07-01","BTCUSDT",p)[0]
+        t=first["signal_i"];k=t+1
+        support=min(self.series[j][3] for j in range(t-12,t))
+        broken=list(self.series)
+        op=support+0.30*first["atr"]
+        close=support+0.05*first["atr"]  # no close below former support
+        broken[k]=(broken[k][0],op,op+0.1*first["atr"],
+                   close-0.1*first["atr"],close)
+        retests=a.find_retest_events(broken,"2026-07-01","BTCUSDT",p)
+        self.assertFalse(any(x["signal_i"]==k for x in retests))
+
     def test_stop_first_in_same_candle(self):
         first=a.find_events(self.series,"2026-07-01","BTCUSDT",self.manifest["fixed_parameters"])[0]
         index=first["signal_i"]+1
