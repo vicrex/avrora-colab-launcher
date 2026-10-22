@@ -21,7 +21,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_CODE_SHA: 02175fe93f932c15b6b70ba3bf027eb1385e9182
+      PRIVATE_CODE_SHA: 72f5669a219b336f0c39e5f9e11f7673543a5e14
       PRIVATE_DATA_SHA: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
     steps:
       - name: Verify existing readonly SSH and Drive ADC credentials present
@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: 02175fe93f932c15b6b70ba3bf027eb1385e9182
+          ref: 72f5669a219b336f0c39e5f9e11f7673543a5e14
           path: private_code
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
           persist-credentials: false
