@@ -22,7 +22,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_CODE_SHA: a301c05b2c95bde72869ef133907f78c5731f4f1
+      PRIVATE_CODE_SHA: b06fb4408ac8b53f83a3dfd53bd4c358903c8797
       PRIVATE_DATA_SHA: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
     steps:
       - name: Verify read-only source credentials
@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: a301c05b2c95bde72869ef133907f78c5731f4f1
+          ref: b06fb4408ac8b53f83a3dfd53bd4c358903c8797
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -70,6 +70,36 @@ jobs:
             exit 3
           }
           echo 'PASS_PRIVATE_MULTIFAMILY_PROPOSAL_AND_SAFETY_TESTS'
+      - name: Independently verify P816 byte lineage, complete OHLC grid and synchronized six-asset warmup
+        run: |
+          set -euo pipefail
+          cd private_code
+          if ! python -m unittest research.data_quality.test_p816_independent_audit > "$RUNNER_TEMP/p816_audit_unit.log" 2>&1; then
+            grep -E '^(FAIL|ERROR):|^Ran |^FAILED' "$RUNNER_TEMP/p816_audit_unit.log" | head -20 || true
+            echo 'BLOCKED_P816_PANEL_AUDIT_UNIT'
+            exit 9
+          fi
+          if ! python research/data_quality/p816_independent_audit.py \
+              --private-data-checkout ../private_source \
+              --output ../p816_panel_audit_private.json \
+              > "$RUNNER_TEMP/p816_audit_run.log" 2>&1; then
+            echo 'BLOCKED_P816_PANEL_AUDIT_REAL_DATA'
+            exit 10
+          fi
+          python - <<'PY'
+          import json, pathlib
+          obj=json.loads(pathlib.Path('../p816_panel_audit_private.json').read_text())
+          if (obj.get('structural_integrity')!='PASS'
+                  or obj.get('rows')!=69576 or obj.get('periods')!=13
+                  or obj.get('synced_symbols')!=6
+                  or obj.get('upstream_parquet_bytes_reaudited') is not False
+                  or obj.get('data_observed_at_realtime_proven') is not False):
+              raise SystemExit('BLOCKED_P816_PANEL_AUDIT_INCOMPLETE')
+          print('PASS_P816_PANEL_GRID_AND_SYNCHRONIZATION',
+                obj['rows'],obj['periods'],obj['synced_symbols'],
+                'DIAGNOSTIC_FLAGS',obj['outlier_event_count'],
+                'AUDIT_SHA',obj['audit_sha256'])
+          PY
       - name: Freeze this run's UTC hour as deterministic sweep batch
         run: |
           set -euo pipefail
@@ -111,6 +141,14 @@ jobs:
           if hashlib.sha256(json.dumps(complete,ensure_ascii=False,sort_keys=True,
                  separators=(',',':'),allow_nan=False).encode()).hexdigest()!=digest:
               raise SystemExit('BLOCKED_PRIVATE_SWEEP_RECEIPT_SHA')
+          audit=json.loads(pathlib.Path('p816_panel_audit_private.json').read_text())
+          aud= audit.copy();digest=aud.pop('audit_sha256')
+          if (audit.get('structural_integrity')!='PASS'
+              or audit.get('rows')!=69576
+              or audit.get('data_observed_at_realtime_proven') is not False
+              or hashlib.sha256(json.dumps(aud,sort_keys=True,separators=(',',':'),
+                 ensure_ascii=False,allow_nan=False).encode()).hexdigest()!=digest):
+              raise SystemExit('BLOCKED_INDEPENDENT_P816_AUDIT_RECEIPT_SHA')
           receipt={'schema':'AVRORA_PUBLIC_SHADOW_MULTIFAMILY_BATCH_V1',
             'run_id':os.environ['GITHUB_RUN_ID'],
             'private_code_sha':os.environ['PRIVATE_CODE_SHA'],
@@ -124,7 +162,12 @@ jobs:
             'check2':'NOT_INDEPENDENTLY_RECONSTRUCTED',
             'status':'RESEARCH_MODELLED_DISCOVERY_ONLY',
             'real':'OFF','holdout':'SEALED','oos':False,'maker_fill_proven':False,
-            'full_private_results_persisted':False}
+            'full_private_results_persisted':False,
+            'p816_independent_panel_audit':'PASS',
+            'p816_audit_sha256':digest,
+            'panel_quality_diagnostic_events':audit['outlier_event_count'],
+            'parquet_source_bytes_reaudited':False,
+            'realtime_data_availability_proven':False}
           pathlib.Path('sweep_public_summary.json').write_text(json.dumps(
             receipt,sort_keys=True,separators=(',',':'))+'\n')
           print('PASS_BOUNDED_SHADOW_SWEEP_AGGREGATE',receipt['tested'],
@@ -142,4 +185,4 @@ jobs:
         if: ${{ always() }}
         run: |
           rm -rf "$GITHUB_WORKSPACE/private_code" "$GITHUB_WORKSPACE/private_source"
-          rm -f "$GITHUB_WORKSPACE/sweep_private_full.json" "$RUNNER_TEMP/sweep_run.log" "$RUNNER_TEMP/sweep_unittests.log"
+          rm -f "$GITHUB_WORKSPACE/sweep_private_full.json" "$RUNNER_TEMP/sweep_run.log" "$RUNNER_TEMP/sweep_unittests.log" "$GITHUB_WORKSPACE/p816_panel_audit_private.json" "$RUNNER_TEMP/p816_audit_unit.log" "$RUNNER_TEMP/p816_audit_run.log"
