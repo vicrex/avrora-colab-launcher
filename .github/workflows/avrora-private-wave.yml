@@ -201,8 +201,8 @@ jobs:
           python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
           python tools/full13_wave_colab.py run "${{ steps.research_candidate.outputs.id }}"
           python tools/full13_wave_colab.py verify full13_research_receipt.json "${{ steps.research_candidate.outputs.id }}"
-      - name: Upload verified complete 13-week aggregate proof
-        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' && success() && steps.full13_cache.outputs.cache-hit != 'true' }}
+      - name: Upload verified complete 13-week aggregate proof (fresh or verified cache)
+        if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' && success() }}
         uses: actions/upload-artifact@v4
         with:
           name: avrora-full13-verified-${{ steps.research_candidate.outputs.id }}-${{ github.run_id }}
