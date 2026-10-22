@@ -29,6 +29,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Scientific discovery: 64 unique LONG/SHORT variants/hour on already studied P816;
+  # invokes PRIVATE code via read-only key, NEVER trades, and NO additional cron.
+  multifamily-shadow-scheduled:
+    if: ${{ github.event_name == 'schedule' }}
+    uses: ./.github/workflows/multifamily-sweep-smoke.yml
+    secrets: inherit
+
   # This is the only scheduled entry point; one FULL13 candidate per hour.
   full13-scheduled:
     if: ${{ github.event_name == 'schedule' }}
