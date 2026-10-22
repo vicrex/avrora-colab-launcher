@@ -81,6 +81,7 @@ jobs:
           set -euo pipefail
           cd private_code/research/strategies/sq05
           if ! python -m unittest discover -s tests -p 'test_*.py' > "$RUNNER_TEMP/sq05_tests.log" 2>&1; then
+            grep -E '^(FAIL|ERROR):|^Ran |^FAILED' "$RUNNER_TEMP/sq05_tests.log" | head -20 || true
             echo 'BLOCKED_PRIVATE_SQ05_CHECK2_UNIT_TESTS'
             exit 3
           fi
@@ -90,6 +91,7 @@ jobs:
           set -euo pipefail
           cd private_code
           if ! python -m unittest research.insight_map.test_sol_sq05_prospective_probe > "$RUNNER_TEMP/probe_tests.log" 2>&1; then
+            grep -E '^(FAIL|ERROR):|^Ran |^FAILED' "$RUNNER_TEMP/probe_tests.log" | head -20 || true
             echo 'BLOCKED_PRIVATE_SQ05_FORWARD_PROBE_UNIT_TESTS'
             exit 4
           fi
@@ -99,6 +101,7 @@ jobs:
           set -euo pipefail
           cd private_code
           if ! python -m unittest research.insight_map.test_sq05_forward_source_ledger > "$RUNNER_TEMP/firstseen_tests.log" 2>&1; then
+            grep -E '^(FAIL|ERROR):|^Ran |^FAILED' "$RUNNER_TEMP/firstseen_tests.log" | head -20 || true
             echo 'BLOCKED_PRIVATE_FIRST_SEEN_SOURCE_TESTS'
             exit 5
           fi
@@ -108,6 +111,7 @@ jobs:
           set -euo pipefail
           cd private_code
           if ! python -m unittest research.insight_map.test_sol_sq05_frozen_engine_parity > "$RUNNER_TEMP/parity_tests.log" 2>&1; then
+            grep -E '^(FAIL|ERROR):|^Ran |^FAILED' "$RUNNER_TEMP/parity_tests.log" | head -20 || true
             echo "BLOCKED_SQ05_LEGACY_FORWARD_PARITY"
             exit 6
           fi
