@@ -31,6 +31,22 @@ class Full13WorkflowTests(unittest.TestCase):
         self.assertIn('avrora-full13-verified-',self.s)
         self.assertIn('avrora-full13-vector-delta-',self.s)
         self.assertIn('BLOCKED_NO_VERIFIED_FULL13_RECEIPT',self.s)
+    def test_cached_receipt_is_published_only_after_verification(self):
+        # Every full13 job must expose the CHECK2-verified aggregate receipt,
+        # including a cache hit. Publishing is not a fresh economic replay.
+        before, after = self.s.split('      - name: Upload verified complete 13-week aggregate proof (fresh or verified cache)', 1)
+        upload, following = after.split('      - name: Cache verified complete 13-week aggregate', 1)
+        self.assertIn('Verify cached FULL13 scope and CHECK2 receipt', before)
+        self.assertIn('python tools/full13_wave_colab.py verify', before)
+        self.assertIn("if: ${{ env.RUN_WAVE == 'true' && env.RUN_FULL13 == 'true' && success() }}", upload)
+        self.assertNotIn("steps.full13_cache.outputs.cache-hit != 'true'", upload)
+        self.assertIn('if-no-files-found: error', upload)
+        self.assertIn('avrora-full13-verified-', upload)
+        # Cache writes remain limited to novel calculations.
+        self.assertIn("steps.full13_cache.outputs.cache-hit != 'true'", following)
+        self.assertEqual(self.s.count('python tools/full13_wave_colab.py run'), 1)
+        self.assertNotIn('AVRORA_DRIVE_SERVICE_ACCOUNT', self.s)
+
     def test_paid_colab_adc_is_still_narrow(self):
         self.assertIn("env.RUN_FULL13 == 'true' || steps.existing_proof",self.s)
         self.assertIn("'google-colab-cli==0.7.4'",self.s)
