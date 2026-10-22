@@ -47,3 +47,10 @@ For PR #62 private graph importer, run offline verification in the **existing pu
 
 ## Change log
 - 2026-10-22: audited current public workflow source. Existing cron is `7 * * * *`; reusable private-wave job has variable gate. No confirmed root cause for missing event from YAML alone. This runbook documents the verification and repair protocol. No workflow code or timer changed by this documentation commit.
+
+## Bybit forward M15 capture: US-hosted runner blocked (2026-10-22)
+
+Public launcher [run 39739961146](https://github.com/vicrex/avrora-colab-launcher/actions/runs/39739961146) executed read-only six-symbol M15 collector; synthetic offline test PASS, actual `api.bybit.com/v5/market/kline` returned HTTP 403 **before any data**. Official [Bybit V5 integration guide](https://bybit-exchange.github.io/docs/v5/guide) states US/Mainland-China IPs receive 403. Public GitHub-hosted runners often egress from the US; do not try third-party proxies or region bypass. This is **not** a trading signal failure and generated **zero approved forward M15 records**. `AVRORA_FORWARD_CAPTURE_ENABLED` must remain unset/false on US GitHub-hosted runners. The existing hourly `7 * * * *` FULL13 job is unchanged. Collect only via legitimate authorized data/runner later.
+
+Separate [run 39739308363](https://github.com/vicrex/avrora-colab-launcher/actions/runs/39739308363) verified the existing public runner requires a **dedicated** read-only private AVRORA code checkout key: `BLOCKED_PRIVATE_AVRORA_READONLY_CODE_KEY_MISSING`. The existing `AVRORA_WAVE_SOURCE_DEPLOY_KEY` is scoped to the DATA repo and must NOT be assumed to authorize source code. Zero private code was checked out on that run. Private [PR #64](https://github.com/vicrex/AVRORA/pull/64) contains SHA-exact migrated SQ05 engine/checkers and seven original tests; code parity by blob is established but runner test still BLOCKED. No real orders, HOLDOUT sealed, no new schedule, no Work.
+
