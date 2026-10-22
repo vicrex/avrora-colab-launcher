@@ -1,6 +1,7 @@
 name: AVRORA private multifamily batch smoke (shadow, public executor)
 
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     branches: [main]
@@ -69,9 +70,17 @@ jobs:
             exit 3
           }
           echo 'PASS_PRIVATE_MULTIFAMILY_PROPOSAL_AND_SAFETY_TESTS'
+      - name: Freeze this run's UTC hour as deterministic sweep batch
+        run: |
+          set -euo pipefail
+          hour=$(( $(date -u +%s) / 3600 ))
+          if [[ "$hour" -lt 497940 ]]; then
+            echo "BLOCKED_SWEEP_BEFORE_FROZEN_SCHEDULE"
+            exit 2
+          fi
+          echo "RESEARCH_UTC_HOUR=$hour" >> "$GITHUB_ENV"
+          echo "SWEEP_HOUR_$hour"
       - name: Evaluate 64 REAL P816 discovery-sample cases via private engine
-        env:
-          RESEARCH_UTC_HOUR: '497952'
         run: |
           set -euo pipefail
           cd private_code
@@ -85,8 +94,6 @@ jobs:
           fi
           echo 'PASS_REAL_P816_DISCOVERY_SHADOW_SWEEP_NO_MAKER_FILL'
       - name: Publish aggregate safety receipt only (no private hypotheses)
-        env:
-          RESEARCH_UTC_HOUR: '497952'
         run: |
           set -euo pipefail
           python - <<'PY'
