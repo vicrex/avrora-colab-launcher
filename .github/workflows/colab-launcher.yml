@@ -94,7 +94,9 @@ jobs:
 
   capture-forward-m15:
     name: Public Bybit M15 transport (no trading/strategy)
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'push' }}
+    # OFF by default: US GitHub runners receive Bybit HTTP 403 (provider geo restriction).
+    # Only enable on a compliant, provider-supported runner after documented access check.
+    if: ${{ (github.event_name == 'schedule' || github.event_name == 'push') && vars.AVRORA_FORWARD_CAPTURE_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
