@@ -1,0 +1,43 @@
+# AVRORA — public GitHub hourly runbook (2026-10-22)
+
+## Immutable operating constraints
+- Execution via existing public GitHub Actions only; **never** ChatGPT Work, Cloud Browser, Computer Use, new timers, paid services, or live trading.
+- REAL=OFF; HOLDOUT=SEALED. Do not open holdout. Never claim maker fills, OOS, profitability or autonomy without evidence.
+- Never print credentials, private checkout contents, raw market data or sensitive logs in public Actions.
+- No blind reruns for private pre-runner failures; steps=[] and runner_id=0 imply investigate runner/platform before Python changes.
+
+## Repositories and entry points
+- Public scheduler: https://github.com/vicrex/avrora-colab-launcher
+- Workflow: .github/workflows/colab-launcher.yml (workflow ID 389014912), existing cron `7 * * * *`; no additional clocks.
+- Scheduled job `full13-scheduled` calls reusable `.github/workflows/avrora-private-wave.yml`, job `private-wave`.
+- Private pipeline: https://github.com/vicrex/AVRORA (research-ingress-drain/CI).
+- Private SHA-pinned read-only dataset source in reusable workflow: vicrex/avrora-wave-source; do not reveal its contents.
+- Drive delivery folder ID: 1MXTBe21rTm1fVYzjUQ6NNf8cJzOQ0NKX.
+
+## Hourly observation and triage
+1. List workflow runs for workflow 389014912, filter event=schedule; record run_id, attempt, created_at, status, conclusion, and head SHA. If no new scheduled run >90 minutes, mark SCHEDULE_TRIGGER_MISSING. GitHub scheduled events can be delayed or dropped; do not conflate a missing event with job-level `if` skips.
+2. For each new run inspect jobs `full13-scheduled` and `private-wave`, step conclusions and logs. Inspect whether workflow is disabled and whether default branch contains the cron. Check repository Actions permissions, workflow enabled status, GitHub incident status, and default-branch activity before modifying YAML.
+3. Reusable workflow has gate `vars.AVRORA_PRIVATE_WAVE_ENABLED == 'true' || vars.AVRORA_FULL13_ENABLED == 'true'` for schedule. If unset, scheduled job may be skipped even though event exists. Verify actual repository variable values, not assumptions; prefer explicit FULL13 enablement only after confirming authorization and secrets. Do not expose variable values if sensitive.
+4. Distinguish fresh FULL13 Colab execution from SHA-keyed cache-hit using actual steps and receipt; `success` alone does not prove fresh compute. Record candidate and failure codes.
+5. Check FULL13 dataset: 13 periods (12 discovery + May), 6 symbols, 78 series, 69,576 M15 bars, 220 warmup bars per period, SHA pin and independent CHECK2. Reject missing/partial evidence.
+6. For private vicrex/AVRORA Actions research-ingress-drain/CI inspect runner_id and steps; if steps=[]/runner_id=0 label PRE_RUNNER_BLOCKED. Prior retry run 39504593892 attempt 2 failed before steps. Do not rerun without changed condition.
+7. Discover artifacts `avrora-full13-vector-delta-<run>-<attempt>` and optionally `avrora-full13-verified-*`. Confirm absent from Drive before upload. Deterministic names: `HOUR_<run>_V1_FULL13_VECTOR_DELTA.zip`, `HOUR_<run>_V1_FULL13_VERIFIED_RECEIPT.zip`.
+8. Use GitHub download_workflow_artifact; pass **string** `result.file_uri.file_id` as Google_Drive.upload_file(file_uri=...,parent_folder_id=folder_id,file_name=...,mime_type='application/zip'). Never pass file_uri object.
+9. After upload read Drive metadata and **raw ZIP bytes** back; compute SHA256 and compare against GitHub artifact.digest (normalize `sha256:` prefix). Only mark DELIVERY_VERIFIED on exact match. Otherwise DELIVERY_UNVERIFIED/BLOCKED; no duplicate uploads. If readback or digest unavailable, do not assert verification.
+10. Notify only for newly confirmed delivery, new failure, >90 minute missing schedule, or newly recovered private runner. Include run ID, event, candidate, cached/fresh, Drive file ID, SHA and URL where available.
+
+## Prior observed evidence, not new proof
+- Scheduled run 39474595117: successful fresh FIVE_WAVE_07.
+- Scheduled run 39506465672: successful cached FIVE_WAVE_11. Delta already in Drive file 1unOm17dHGpgcu8MfR6tfSWm68doqnbfz, ZIP SHA256 3a8c12454fb4919db426e362d2cafd29d2ba0030f85bae05071fca35138607f2; **never upload duplicate**.
+- Run 39685011449: previously reported last scheduled run, subsequent >90 minute gap; recheck live state.
+- No claim of end-to-end autonomy until two complete unattended cycles verified.
+
+## Incident decision tree
+- No schedule event: inspect enabled workflow/default branch/cron/platform; do not edit Python or claim gate caused missing event.
+- Event exists, job skipped: inspect reusable workflow `if` and repository vars.
+- Job starts, Colab fails: inspect sanitized logs, credential presence, SHA pin, CHECK2, 69,576 bars and source validation; preserve explicit failure.
+- Artifact exists, Drive missing: transfer once; independently read back and hash.
+- Private runner absent: mark pre-runner blocked; do not blindly rerun.
+
+## Change log
+- 2026-10-22: audited current public workflow source. Existing cron is `7 * * * *`; reusable private-wave job has variable gate. No confirmed root cause for missing event from YAML alone. This runbook documents the verification and repair protocol. No workflow code or timer changed by this documentation commit.
