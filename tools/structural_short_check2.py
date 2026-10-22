@@ -10,7 +10,7 @@ except ImportError:
     import full13_wave_colab as pinned
 
 SYMS=("BTCUSDT","ETHUSDT","LINKUSDT","NEARUSDT","SOLUSDT","XRPUSDT")
-IDS=("TREND_BREAK_SHORT_V1","BREAK_ONLY_SHORT_CONTROL_V1","TREND_RETEST_SHORT_V1")
+IDS=("TREND_BREAK_SHORT_V1","BREAK_ONLY_SHORT_CONTROL_V1","TREND_RETEST_SHORT_V1","SQUEEZE_BREAK_SHORT_V1")
 
 def derive(bars,week,symbol):
     a20=2/21
@@ -68,10 +68,62 @@ def derive_retests(bars,week,symbol):
                 break
     return result
 
+def derive_squeezes(bars,week,symbol):
+    """Independent OHLC contraction-break reconstruction with no primary imports."""
+    a20=2/21
+    a60=2/61
+    f=bars[0][4]
+    s=bars[0][4]
+    e20=[]
+    e60=[]
+    for bar in bars:
+        f=bar[4]*a20+f*(1-a20)
+        s=bar[4]*a60+s*(1-a60)
+        e20.append(f)
+        e60.append(s)
+    found=[]
+    previous_event=-1000
+    for i in range(220,len(bars)-13):
+        if i-previous_event<8:
+            continue
+        recent=bars[i-8:i]
+        old=bars[i-16:i-8]
+        width=max(c[2] for c in recent)-min(c[3] for c in recent)
+        oldwidth=max(c[2] for c in old)-min(c[3] for c in old)
+        pre_tr=0.0
+        for k in range(i-14,i):
+            hh,ll=bars[k][2],bars[k][3]
+            prevclose=bars[k-1][4]
+            pre_tr+=max(hh-ll,abs(hh-prevclose),abs(ll-prevclose))
+        pre_atr=pre_tr/14.0
+        if not(oldwidth>0 and pre_atr>0 and width<=0.70*oldwidth
+               and width<=3.0*pre_atr):
+            continue
+        vol=0.0
+        for k in range(i-13,i+1):
+            hh,ll=bars[k][2],bars[k][3]
+            prevclose=bars[k-1][4]
+            vol+=max(hh-ll,abs(hh-prevclose),abs(ll-prevclose))
+        atr=vol/14.0
+        op,hi,lo,cl=bars[i][1:]
+        if (atr<=0 or cl>=min(c[3] for c in recent)-0.10*atr
+                or op-cl<0.35*atr or cl>=op or hi-lo>2.5*atr):
+            continue
+        if not(e20[i]<e60[i] and e60[i]<e60[i-8] and cl<e20[i]):
+            continue
+        previous_event=i
+        found.append({"period":week,"symbol":symbol,"signal_t":bars[i][0],
+                      "signal_i":i,"entry_t":bars[i+1][0],
+                      "atr":atr,"signal_high":hi,"trend":True,"bars":bars})
+    return found
+
+
 def sequence(data,mode):
     rows=[]
     for (week,sym),bars in sorted(data.items()):
-        if mode==IDS[2]:
+        if mode==IDS[3]:
+            rows.extend(derive_squeezes(bars,week,sym))
+        elif mode==IDS[2]:
             rows.extend(derive_retests(bars,week,sym))
         elif mode==IDS[1]:
             rows.extend(derive(bars,week,sym))
