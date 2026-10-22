@@ -14,6 +14,12 @@ on:
   # Hourly schedule; only performs remote Colab work AFTER enabling the repository variable.
   schedule:
     - cron: "7 * * * *"
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/colab-launcher.yml'
+      - 'tools/forward_m15_transport.py'
+      - 'tests/test_forward_m15_transport.py'
 
 permissions:
   contents: read
@@ -88,7 +94,7 @@ jobs:
 
   capture-forward-m15:
     name: Public Bybit M15 transport (no trading/strategy)
-    if: ${{ github.event_name == 'schedule' }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
