@@ -14,8 +14,8 @@ except ImportError:
 
 SCHEMA="AVRORA_STRUCTURAL_SHORT_FULL13_V1"
 MARKER="AVRORA_STRUCTURAL_SHORT_VERIFIED="
-CANDIDATES=("TREND_BREAK_SHORT_V1","BREAK_ONLY_SHORT_CONTROL_V1")
-MANIFEST="research/structural_short_prereg_v1.json"
+CANDIDATES=("TREND_BREAK_SHORT_V1","BREAK_ONLY_SHORT_CONTROL_V1","TREND_RETEST_SHORT_V1")
+MANIFEST="research/structural_short_prereg_v2.json"
 NOTIONAL_CAP=500.
 START_EQUITY=300.
 SYMBOLS=pin.SYMBOLS
@@ -30,15 +30,15 @@ def gate():
         raise ValueError("BLOCKED_STRUCTURAL_SHORT_NOT_AUTHORIZED")
 
 def manifest_path():
-    local=pathlib.Path(__file__).resolve().parent.parent/"research/structural_short_prereg_v1.json"
+    local=pathlib.Path(__file__).resolve().parent.parent/"research/structural_short_prereg_v2.json"
     if local.is_file():return local
-    return pathlib.Path(__file__).resolve().parent/"structural_short_prereg_v1.json"
+    return pathlib.Path(__file__).resolve().parent/"structural_short_prereg_v2.json"
 
 def load_manifest():
     path=manifest_path()
     raw=path.read_bytes()
     m=json.loads(raw)
-    if (m.get("schema")!="AVRORA_SHORT_BREAKOUT_FULL13_PREREG_V1"
+    if (m.get("schema")!="AVRORA_SHORT_BREAKOUT_FULL13_PREREG_V2"
         or m.get("candidate_ids")!=list(CANDIDATES)
         or m.get("safety",{}).get("holdout")!="SEALED"
         or m.get("safety",{}).get("real")!="OFF"
@@ -51,7 +51,9 @@ def load_manifest():
         "min_notional":25,"max_notional":500,"max_stop_risk_usdt":5,
         "start_equity_usdt":300,"min_equity_for_entry_usdt":20,
         "max_leverage":10,"max_active":2,"primary_roundtrip_cost_bps":20,
-        "stress_roundtrip_cost_bps":[16,20,25,40]}
+        "stress_roundtrip_cost_bps":[16,20,25,40],
+        "retest_window_bars":4,"retest_touch_tolerance_atr":0.15,
+        "retest_rejection_body_atr":0.15}
     if m.get("fixed_parameters")!=expected:
         raise ValueError("BLOCKED_STRUCTURAL_PREREG_PARAMETERS")
     return m,hashbytes(raw)
@@ -93,6 +95,27 @@ def find_events(bars,week,sym,params):
                        "bars":bars})
     return events
 
+def find_retest_events(bars,week,sym,params):
+    """Causal retest after closed breakout, all thresholds preregistered."""
+    proposals=[]
+    for event in find_events(bars,week,sym,params):
+        if not event["trend"]:
+            continue
+        t=event["signal_i"]
+        a=event["atr"]
+        support=min(row[3] for row in bars[t-params["support_lookback"]:t])
+        end=min(t+params["retest_window_bars"]+1,len(bars)-MAX_DURATION-1)
+        for k in range(t+1,end):
+            op,high,low,close=bars[k][1:]
+            if (high>=support-params["retest_touch_tolerance_atr"]*a
+                    and close<support and op-close>=params["retest_rejection_body_atr"]*a
+                    and close<op):
+                proposals.append(dict(event,signal_t=bars[k][0],signal_i=k,
+                                     entry_t=bars[k+1][0],signal_high=high,
+                                     atr=true_atr(bars,k)))
+                break
+    return proposals
+
 def predict_fill(event,notional,params):
     b=event["bars"];t=event["signal_i"];entry_idx=t+1
     entry=b[entry_idx][1];stop=max(event["signal_high"],entry+1.25*event["atr"])
@@ -123,7 +146,12 @@ def proposals(data,m,mode):
     for (period,symbol),bars in sorted(data.items()):
         if mode=="TREND_BREAK_SHORT_V1":
             found=[x for x in find_events(bars,period,symbol,m["fixed_parameters"]) if x["trend"]]
-        else:found=find_events(bars,period,symbol,m["fixed_parameters"])
+        elif mode=="BREAK_ONLY_SHORT_CONTROL_V1":
+            found=find_events(bars,period,symbol,m["fixed_parameters"])
+        elif mode=="TREND_RETEST_SHORT_V1":
+            found=find_retest_events(bars,period,symbol,m["fixed_parameters"])
+        else:
+            raise ValueError("BLOCKED_UNREGISTERED_SHORT_CANDIDATE")
         incoming.extend(found)
     def rank(x):
         ordinal=SYMBOLS.index(x["symbol"])
@@ -269,7 +297,7 @@ def remote_run(compressed,meta):
         "full13_wave_colab.py":pathlib.Path(pin.__file__).read_bytes(),
         "hourly_wave_research.py":pathlib.Path(pin.primary.__file__).read_bytes(),
         "hourly_wave_check2.py":pathlib.Path(pin.independent.__file__).read_bytes(),
-        "structural_short_prereg_v1.json":manifest_path().read_bytes(),
+        "structural_short_prereg_v2.json":manifest_path().read_bytes(),
         "panel.gz":compressed,"meta.json":canon(meta).encode()}
     b={k:base64.b64encode(v).decode() for k,v in files.items()}
     script=("import base64,os,pathlib,subprocess,sys,tempfile\n"
