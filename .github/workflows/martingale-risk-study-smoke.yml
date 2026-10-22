@@ -1,0 +1,164 @@
+name: AVRORA Martingale risk sizing study (private shadow only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/martingale-risk-study-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-martingale-risk-study-one-shot
+  cancel-in-progress: false
+
+jobs:
+  martingale-comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PRIVATE_CODE_SHA: 92366f17beb4e75e5b837d36abfbe05ff2f9fa19
+      PRIVATE_DATA_SHA: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
+    steps:
+      - name: Verify existing readonly SSH and Drive ADC credentials present
+        env:
+          HAS_CODE: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+          HAS_PANEL: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+          HAS_DRIVE: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAS_CODE" != 'true' || "$HAS_PANEL" != 'true' ]]; then
+            echo 'BLOCKED_PRIVATE_READONLY_RESEARCH_SOURCE_CREDENTIAL'
+            exit 2
+          fi
+          if [[ "$HAS_DRIVE" != 'true' ]]; then
+            echo 'BLOCKED_RESEARCH_DRIVE_ADC_MISSING'
+            exit 3
+          fi
+          echo 'PASS_EXISTING_RESEARCH_CONNECTIVITY'
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout PRIVATE immutable strategy research
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: 92366f17beb4e75e5b837d36abfbe05ff2f9fa19
+          path: private_code
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          persist-credentials: false
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Checkout PRIVATE immutable original P816 data
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
+          path: private_source
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Preflight frozen source pins and independent quality audit
+        run: |
+          set -euo pipefail
+          test "$(git -C private_code rev-parse HEAD)" = "$PRIVATE_CODE_SHA"
+          test "$(git -C private_source rev-parse HEAD)" = "$PRIVATE_DATA_SHA"
+          cd private_code
+          if ! python -m unittest research.risk_overlay.test_martingale_p816_v1 research.data_quality.test_p816_independent_audit > "$RUNNER_TEMP/martingale_tests.log" 2>&1; then
+            grep -E '^(FAIL|ERROR):|^Ran |^FAILED' "$RUNNER_TEMP/martingale_tests.log" | head -20 || true
+            echo 'BLOCKED_PRIVATE_RISK_OVERLAY_OFFLINE_TESTS'
+            exit 4
+          fi
+          if ! python -m research.data_quality.p816_independent_audit --private-data-checkout ../private_source --output ../p816_independent_audit_martingale.json > "$RUNNER_TEMP/audit.log" 2>&1; then
+            echo 'BLOCKED_P816_RAW_SOURCE_PANEL_AUDIT'
+            exit 5
+          fi
+          echo 'PASS_PRIVATE_OVERLAY_TESTS_AND_RAW_PANEL_INDEPENDENT_AUDIT'
+      - name: Execute frozen comparison of five policies on twelve real P816 strategies
+        run: |
+          set -euo pipefail
+          cd private_code
+          if ! python -m research.risk_overlay.martingale_p816_v1 \
+            --private-data-checkout ../private_source \
+            --output ../martingale_private_full.json > "$RUNNER_TEMP/martingale_econ.log" 2>&1; then
+            echo 'BLOCKED_MARTINGALE_REAL_P816_SHADOW_STUDY'
+            exit 6
+          fi
+          echo 'PASS_MARTINGALE_REAL_P816_SHADOW_COMPARISON_NO_MAKER_FILL'
+      - name: Check private study and publish public aggregate only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,hashlib,pathlib
+          path=pathlib.Path('martingale_private_full.json')
+          j=json.loads(path.read_text())
+          assert j['schema']=='AVRORA_P816_MARTINGALE_COMPARISON_DISCOVERY_SHADOW_V1'
+          assert j['real']=='OFF' and j['holdout']=='SEALED'
+          assert j['maker_fill_proven'] is False and j['oos_proven'] is False
+          assert j['record_count']==480 and len(j['results'])==480
+          src=j.copy();digest=src.pop('receipt_sha256')
+          assert hashlib.sha256(json.dumps(src,sort_keys=True,ensure_ascii=False,
+              separators=(',',':'),allow_nan=False).encode()).hexdigest()==digest
+          assert len(set((x['candidate_index'],x['split'],x['diagnostic_scope'],
+              x['cost_bps'],x['policy']) for x in j['results']))==480
+          counts={}
+          for p in ('FIXED','CAPPED_1P5_AFTER_LOSS','CAPPED_DOUBLE_AFTER_LOSS',
+                    'ANTI_1P5_AFTER_WIN','DRAWDOWN_HALF_RISK'):
+              full=[x for x in j['results'] if x['policy']==p and x['cost_bps']==20
+                    and x['diagnostic_scope']=='ALL_WEEKS']
+              stress=[x for x in j['results'] if x['policy']==p and x['cost_bps']==40
+                      and x['diagnostic_scope']=='ALL_WEEKS']
+              counts[p]={'n_historical_blocks':len(full),
+                         'positive_at_20bps':sum(x['net_usdt']>0 for x in full),
+                         'positive_at_40bps':sum(x['net_usdt']>0 for x in stress),
+                         'worst_closed_dd_max':round(max(x['max_closed_equity_drawdown']
+                                                        for x in stress),6)}
+          x={'schema':'AVRORA_MARTINGALE_PUBLIC_AGGREGATE_V1',
+             'real':'OFF','holdout':'SEALED','oos_proven':False,
+             'maker_fill_proven':False,'independent_check2':'NOT_PROVEN',
+             'model': 'POSTFACTO_NEXT_OPEN_CLOSED_EQUITY_ONLY',
+             'count':j['record_count'],'families_and_directions':12,
+             'historic_partitions_are_studied':True,
+             'model_positive_blocks_by_policy':counts,
+             'private_json_file_sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
+             'private_json_receipt_sha256':digest,
+             'full_report_drive_sha_ack':'PENDING_NEXT_STEP'}
+          pathlib.Path('martingale_public_aggregate.json').write_text(
+              json.dumps(x,sort_keys=True,separators=(',',':'))+'\n')
+          print('PASS_MARTINGALE_PUBLIC_AGGREGATE',x['count'],
+                'PRIVATE_COMMIT_SHA',x['private_json_file_sha256'])
+          PY
+      - name: Upload complete private report to Google Drive and verify byte-level readback
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'google-auth>=2.35,<4' 'requests>=2.31,<3'
+          python tools/private_drive_research_delivery.py \
+             --input martingale_private_full.json \
+             --name "AVRORA_MARTINGALE_RESEARCH_${{ github.run_id }}.json" \
+             --receipt martingale_private_drive_ack.json
+      - name: Publish sanitized receipts only
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-martingale-aggregate-ack-${{ github.run_id }}
+          path: |
+            martingale_public_aggregate.json
+            martingale_private_drive_ack.json
+          retention-days: 14
+          if-no-files-found: error
+      - name: Destroy PRIVATE code, panel and complete research records on public runner
+        if: ${{ always() }}
+        run: |
+          rm -rf private_code private_source
+          rm -f martingale_private_full.json p816_independent_audit_martingale.json
+          rm -f "$RUNNER_TEMP/martingale_tests.log" "$RUNNER_TEMP/audit.log" "$RUNNER_TEMP/martingale_econ.log"
