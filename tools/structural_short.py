@@ -14,8 +14,8 @@ except ImportError:
 
 SCHEMA="AVRORA_STRUCTURAL_SHORT_FULL13_V1"
 MARKER="AVRORA_STRUCTURAL_SHORT_VERIFIED="
-CANDIDATES=("TREND_BREAK_SHORT_V1","BREAK_ONLY_SHORT_CONTROL_V1","TREND_RETEST_SHORT_V1")
-MANIFEST="research/structural_short_prereg_v2.json"
+CANDIDATES=("TREND_BREAK_SHORT_V1","BREAK_ONLY_SHORT_CONTROL_V1","TREND_RETEST_SHORT_V1","SQUEEZE_BREAK_SHORT_V1")
+MANIFEST="research/structural_short_prereg_v3.json"
 NOTIONAL_CAP=500.
 START_EQUITY=300.
 SYMBOLS=pin.SYMBOLS
@@ -30,15 +30,15 @@ def gate():
         raise ValueError("BLOCKED_STRUCTURAL_SHORT_NOT_AUTHORIZED")
 
 def manifest_path():
-    local=pathlib.Path(__file__).resolve().parent.parent/"research/structural_short_prereg_v2.json"
+    local=pathlib.Path(__file__).resolve().parent.parent/"research/structural_short_prereg_v3.json"
     if local.is_file():return local
-    return pathlib.Path(__file__).resolve().parent/"structural_short_prereg_v2.json"
+    return pathlib.Path(__file__).resolve().parent/"structural_short_prereg_v3.json"
 
 def load_manifest():
     path=manifest_path()
     raw=path.read_bytes()
     m=json.loads(raw)
-    if (m.get("schema")!="AVRORA_SHORT_BREAKOUT_FULL13_PREREG_V2"
+    if (m.get("schema")!="AVRORA_SHORT_BREAKOUT_FULL13_PREREG_V3"
         or m.get("candidate_ids")!=list(CANDIDATES)
         or m.get("safety",{}).get("holdout")!="SEALED"
         or m.get("safety",{}).get("real")!="OFF"
@@ -53,7 +53,9 @@ def load_manifest():
         "max_leverage":10,"max_active":2,"primary_roundtrip_cost_bps":20,
         "stress_roundtrip_cost_bps":[16,20,25,40],
         "retest_window_bars":4,"retest_touch_tolerance_atr":0.15,
-        "retest_rejection_body_atr":0.15}
+        "retest_rejection_body_atr":0.15,
+        "squeeze_lookback_bars":8,"squeeze_previous_window_bars":8,
+        "squeeze_max_range_ratio":0.70,"squeeze_max_range_atr":3.0}
     if m.get("fixed_parameters")!=expected:
         raise ValueError("BLOCKED_STRUCTURAL_PREREG_PARAMETERS")
     return m,hashbytes(raw)
@@ -116,6 +118,44 @@ def find_retest_events(bars,week,sym,params):
                 break
     return proposals
 
+def find_squeeze_events(bars,week,sym,params):
+    """Completed-bar compression followed by trend-aligned downward break."""
+    fast=ema_series(bars,params["ema_fast"])
+    slow=ema_series(bars,params["ema_slow"])
+    window=params["squeeze_lookback_bars"]
+    prev=params["squeeze_previous_window_bars"]
+    last=-1000
+    out=[]
+    for t in range(pin.WARMUP,len(bars)-MAX_DURATION-1):
+        if t-last<params["signal_cooldown_bars"]:
+            continue
+        recent=bars[t-window:t]
+        previous=bars[t-window-prev:t-window]
+        if len(recent)!=window or len(previous)!=prev:
+            continue
+        width=max(x[2] for x in recent)-min(x[3] for x in recent)
+        older=max(x[2] for x in previous)-min(x[3] for x in previous)
+        ref_atr=true_atr(bars,t-1)
+        if not (older>0 and ref_atr>0
+                and width<=params["squeeze_max_range_ratio"]*older
+                and width<=params["squeeze_max_range_atr"]*ref_atr):
+            continue
+        op,high,low,close=bars[t][1:]
+        atr=true_atr(bars,t)
+        if (atr<=0 or close>=min(x[3] for x in recent)-params["break_atr"]*atr
+                or op-close<params["body_atr"]*atr or close>=op
+                or high-low>params["max_bar_range_atr"]*atr):
+            continue
+        if not (fast[t]<slow[t] and slow[t]<slow[t-params["ema_slope_lag"]]
+                and close<fast[t]):
+            continue
+        last=t
+        out.append({"period":week,"symbol":sym,"signal_t":bars[t][0],
+                    "signal_i":t,"entry_t":bars[t+1][0],"atr":atr,
+                    "signal_high":high,"trend":True,"bars":bars})
+    return out
+
+
 def predict_fill(event,notional,params):
     b=event["bars"];t=event["signal_i"];entry_idx=t+1
     entry=b[entry_idx][1];stop=max(event["signal_high"],entry+1.25*event["atr"])
@@ -150,6 +190,8 @@ def proposals(data,m,mode):
             found=find_events(bars,period,symbol,m["fixed_parameters"])
         elif mode=="TREND_RETEST_SHORT_V1":
             found=find_retest_events(bars,period,symbol,m["fixed_parameters"])
+        elif mode=="SQUEEZE_BREAK_SHORT_V1":
+            found=find_squeeze_events(bars,period,symbol,m["fixed_parameters"])
         else:
             raise ValueError("BLOCKED_UNREGISTERED_SHORT_CANDIDATE")
         incoming.extend(found)
@@ -297,7 +339,7 @@ def remote_run(compressed,meta):
         "full13_wave_colab.py":pathlib.Path(pin.__file__).read_bytes(),
         "hourly_wave_research.py":pathlib.Path(pin.primary.__file__).read_bytes(),
         "hourly_wave_check2.py":pathlib.Path(pin.independent.__file__).read_bytes(),
-        "structural_short_prereg_v2.json":manifest_path().read_bytes(),
+        "structural_short_prereg_v3.json":manifest_path().read_bytes(),
         "panel.gz":compressed,"meta.json":canon(meta).encode()}
     b={k:base64.b64encode(v).decode() for k,v in files.items()}
     script=("import base64,os,pathlib,subprocess,sys,tempfile\n"
