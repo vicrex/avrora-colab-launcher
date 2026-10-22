@@ -10,7 +10,7 @@ except ImportError:
     import full13_wave_colab as pinned
 
 SYMS=("BTCUSDT","ETHUSDT","LINKUSDT","NEARUSDT","SOLUSDT","XRPUSDT")
-IDS=("TREND_BREAK_SHORT_V1","BREAK_ONLY_SHORT_CONTROL_V1")
+IDS=("TREND_BREAK_SHORT_V1","BREAK_ONLY_SHORT_CONTROL_V1","TREND_RETEST_SHORT_V1")
 
 def derive(bars,week,symbol):
     a20=2/21
@@ -42,11 +42,43 @@ def derive(bars,week,symbol):
         last=i
     return result
 
+def derive_retests(bars,week,symbol):
+    """Independent complete-bar confirmation, not calling primary events."""
+    result=[]
+    for old in derive(bars,week,symbol):
+        if not old["trend"]:
+            continue
+        t=old["signal_i"]
+        broken=min(bars[j][3] for j in range(t-12,t))
+        old_atr=old["atr"]
+        # Retest is known only at the end of its own candle.
+        for k in range(t+1,min(t+5,len(bars)-13)):
+            open_k,high_k,low_k,close_k=bars[k][1:]
+            if (high_k>=broken-0.15*old_atr
+                    and close_k<broken and open_k-close_k>=0.15*old_atr
+                    and close_k<open_k):
+                tr_sum=0.0
+                for q in range(k-13,k+1):
+                    prev=bars[q-1][4]
+                    hh,ll=bars[q][2],bars[q][3]
+                    tr_sum+=max(hh-ll,abs(hh-prev),abs(ll-prev))
+                result.append(dict(old,signal_t=bars[k][0],signal_i=k,
+                                   entry_t=bars[k+1][0],signal_high=high_k,
+                                   atr=tr_sum/14.0))
+                break
+    return result
+
 def sequence(data,mode):
     rows=[]
     for (week,sym),bars in sorted(data.items()):
-        for e in derive(bars,week,sym):
-            if mode==IDS[1] or e["trend"]:rows.append(e)
+        if mode==IDS[2]:
+            rows.extend(derive_retests(bars,week,sym))
+        elif mode==IDS[1]:
+            rows.extend(derive(bars,week,sym))
+        elif mode==IDS[0]:
+            rows.extend(e for e in derive(bars,week,sym) if e["trend"])
+        else:
+            raise ValueError("BLOCKED_SHORT_UNKNOWN_MODE")
     def selector(x):
         slot=(SYMS.index(x["symbol"])-(x["entry_t"]//(4*900000))%6)%6
         return x["entry_t"],slot,x["period"]

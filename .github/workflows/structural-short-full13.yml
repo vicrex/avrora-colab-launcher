@@ -3,7 +3,7 @@ name: AVRORA structural trend SHORT FULL13 (research only)
 on:
   push:
     branches: [main]
-    paths: ["tools/structural_short.py", "tools/structural_short_check2.py", "research/structural_short_prereg_v1.json", ".github/workflows/structural-short-full13.yml"]
+    paths: ["tools/structural_short.py", "tools/structural_short_check2.py", "research/structural_short_prereg_v2.json", ".github/workflows/structural-short-full13.yml"]
   workflow_dispatch:
 
 permissions:
@@ -35,7 +35,7 @@ jobs:
           python - <<'PY'
           from tools.structural_short import load_manifest
           m,pin=load_manifest()
-          assert len(m['candidate_ids'])==2
+          assert len(m['candidate_ids'])==3
           print('PASS_FROZEN_STRUCTURAL_SHORT_PREREG_SHA256='+pin)
           PY
       - name: Validate existing read-only source and Colab access
@@ -81,7 +81,7 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
           python tools/write_adc.py
-      - name: One Colab FULL13 structural short experiment and independent CHECK2
+      - name: One Colab FULL13 structural short + frozen causal retest and independent CHECK2
         env:
           AVRORA_PRIVATE_CHECKOUT: ${{ github.workspace }}/private_source
         run: |
