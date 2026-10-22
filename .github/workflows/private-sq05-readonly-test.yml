@@ -21,21 +21,22 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      CODE_SHA: dd8cf6d8899db5a28366dee5a3bab06da7e4acaf
+      CODE_SHA: 213702dfbd11919029ec98edc0fc1c52b4faaa88
     steps:
-      - name: Check narrowly scoped private-code read credential
+      - name: Verify dedicated read-only AVRORA deploy key
         env:
           HAVE_CODE_KEY: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
         run: |
           set -euo pipefail
           if [[ "$HAVE_CODE_KEY" != 'true' ]]; then
-            echo 'BLOCKED_PRIVATE_AVRORA_READONLY_CODE_KEY_MISSING'
+            echo "BLOCKED_PRIVATE_AVRORA_READONLY_CODE_KEY_MISSING"
             exit 2
           fi
-      - uses: actions/checkout@v4
+      - name: Checkout pinned PRIVATE AVRORA via isolated read-only SSH key
+        uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: dd8cf6d8899db5a28366dee5a3bab06da7e4acaf
+          ref: 213702dfbd11919029ec98edc0fc1c52b4faaa88
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -46,7 +47,7 @@ jobs:
           python-version: '3.12'
       - name: Ensure pinned checkout and byte-exact migrated strategies
         env:
-          PARENT_SHA: dd8cf6d8899db5a28366dee5a3bab06da7e4acaf
+          PARENT_SHA: 213702dfbd11919029ec98edc0fc1c52b4faaa88
         run: |
           set -euo pipefail
           cd private_code
@@ -93,10 +94,28 @@ jobs:
             exit 4
           fi
           echo 'PASS_PRIVATE_SQ05_FORWARD_TIMESTAMP_CHECKS'
+      - name: Test private first-seen archived M15 provenance and lookahead guards
+        run: |
+          set -euo pipefail
+          cd private_code
+          if ! python -m unittest research.insight_map.test_sq05_forward_source_ledger > "$RUNNER_TEMP/firstseen_tests.log" 2>&1; then
+            echo 'BLOCKED_PRIVATE_FIRST_SEEN_SOURCE_TESTS'
+            exit 5
+          fi
+          echo 'PASS_PRIVATE_FIRST_SEEN_SOURCE_GATES'
+      - name: Independently assert frozen SQ05 signal-by-signal parity
+        run: |
+          set -euo pipefail
+          cd private_code
+          if ! python -m unittest research.insight_map.test_sol_sq05_frozen_engine_parity > "$RUNNER_TEMP/parity_tests.log" 2>&1; then
+            echo "BLOCKED_SQ05_LEGACY_FORWARD_PARITY"
+            exit 6
+          fi
+          echo "PASS_PRIVATE_SQ05_FROZEN_ENGINE_PARITY"
       - name: Publish non-sensitive test status only
         if: ${{ success() }}
         run: |
-          printf '{"schema":"AVRORA_PRIVATE_SQ05_READONLY_CI_V1","status":"PASS_OFFLINE_TESTS_ONLY","pinned_private_sha":"dd8cf6d8899db5a28366dee5a3bab06da7e4acaf","real":"OFF","holdout":"SEALED","economic_forward_test":false,"maker_fill_proven":false}\n' > private_sq05_check_receipt.json
+          printf '{"schema":"AVRORA_PRIVATE_SQ05_READONLY_CI_V1","status":"PASS_OFFLINE_TESTS_ONLY","pinned_private_sha":"213702dfbd11919029ec98edc0fc1c52b4faaa88","real":"OFF","holdout":"SEALED","economic_forward_test":false,"maker_fill_proven":false}\n' > private_sq05_check_receipt.json
       - uses: actions/upload-artifact@v4
         if: ${{ success() }}
         with:
@@ -108,4 +127,4 @@ jobs:
         if: ${{ always() }}
         run: |
           rm -rf "$GITHUB_WORKSPACE/private_code"
-          rm -f "$RUNNER_TEMP/sq05_tests.log" "$RUNNER_TEMP/probe_tests.log"
+          rm -f "$RUNNER_TEMP/sq05_tests.log" "$RUNNER_TEMP/probe_tests.log" "$RUNNER_TEMP/firstseen_tests.log" "$RUNNER_TEMP/parity_tests.log"
