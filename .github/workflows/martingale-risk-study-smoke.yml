@@ -146,8 +146,8 @@ jobs:
              --input martingale_private_full.json \
              --name "AVRORA_MARTINGALE_RESEARCH_${{ github.run_id }}.json" \
              --receipt martingale_private_drive_ack.json
-      - name: Publish sanitized receipts only
-        if: ${{ success() }}
+      - name: Publish sanitized public aggregate even if private Drive delivery is blocked
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: avrora-martingale-aggregate-ack-${{ github.run_id }}
@@ -155,7 +155,7 @@ jobs:
             martingale_public_aggregate.json
             martingale_private_drive_ack.json
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: warn
       - name: Destroy PRIVATE code, panel and complete research records on public runner
         if: ${{ always() }}
         run: |
