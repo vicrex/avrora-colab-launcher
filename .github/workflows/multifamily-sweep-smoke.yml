@@ -1,0 +1,138 @@
+name: AVRORA private multifamily batch smoke (shadow, public executor)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/multifamily-sweep-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-private-multifamily-smoke
+  cancel-in-progress: false
+
+jobs:
+  multifamily-shadow-first64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PRIVATE_CODE_SHA: a301c05b2c95bde72869ef133907f78c5731f4f1
+      PRIVATE_DATA_SHA: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
+    steps:
+      - name: Verify read-only source credentials
+        env:
+          HAVE_CODE: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+          HAVE_DATA: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAVE_CODE" != 'true' || "$HAVE_DATA" != 'true' ]]; then
+            echo 'BLOCKED_MULTIFAMILY_MISSING_READONLY_CREDENTIAL'
+            exit 2
+          fi
+      - name: Checkout immutable PRIVATE AVRORA research engine
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: a301c05b2c95bde72869ef133907f78c5731f4f1
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Checkout immutable PRIVATE P816 discovery data
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
+          path: private_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify frozen private source commits and offline proposal safety
+        run: |
+          set -euo pipefail
+          test "$(git -C private_code rev-parse HEAD)" = "$PRIVATE_CODE_SHA"
+          test "$(git -C private_source rev-parse HEAD)" = "$PRIVATE_DATA_SHA"
+          cd private_code
+          python -m unittest research.strategy_search.test_sweep_v1 > "$RUNNER_TEMP/sweep_unittests.log" 2>&1 || {
+            grep -E '^(FAIL|ERROR):|^Ran |^FAILED' "$RUNNER_TEMP/sweep_unittests.log" | head -20 || true
+            echo 'BLOCKED_PRIVATE_SWEEP_TESTS'
+            exit 3
+          }
+          echo 'PASS_PRIVATE_MULTIFAMILY_PROPOSAL_AND_SAFETY_TESTS'
+      - name: Evaluate 64 REAL P816 discovery-sample cases via private engine
+        env:
+          RESEARCH_UTC_HOUR: '497952'
+        run: |
+          set -euo pipefail
+          cd private_code
+          if ! python research/strategy_search/sweep_v1.py \
+              --private-data-checkout ../private_source \
+              --utc-hour "$RESEARCH_UTC_HOUR" \
+              --output ../sweep_private_full.json \
+              > "$RUNNER_TEMP/sweep_run.log" 2>&1; then
+            echo 'BLOCKED_REAL_P816_MULTIFAMILY_SWEEP_RUN'
+            exit 4
+          fi
+          echo 'PASS_REAL_P816_DISCOVERY_SHADOW_SWEEP_NO_MAKER_FILL'
+      - name: Publish aggregate safety receipt only (no private hypotheses)
+        env:
+          RESEARCH_UTC_HOUR: '497952'
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os,pathlib
+          raw=pathlib.Path('sweep_private_full.json').read_bytes()
+          obj=json.loads(raw)
+          if (obj.get('schema')!='AVRORA_MULTIFAMILY_SHADOW_SWEEP_V1'
+              or obj.get('count')!=64 or len(obj.get('candidate_ids',[]))!=64
+              or obj.get('real')!='OFF' or obj.get('holdout')!='SEALED'
+              or obj.get('oos_proven') is not False or obj.get('fill_proven') is not False):
+              raise SystemExit('BLOCKED_SWEEP_REPORT_UNTRUSTED')
+          candidate_ids=obj['candidate_ids']
+          if len(set(candidate_ids))!=64:raise SystemExit('BLOCKED_SWEEP_CANDIDATE_COLLISION')
+          complete=obj.copy();digest=complete.pop('receipt_sha256')
+          if hashlib.sha256(json.dumps(complete,ensure_ascii=False,sort_keys=True,
+                 separators=(',',':'),allow_nan=False).encode()).hexdigest()!=digest:
+              raise SystemExit('BLOCKED_PRIVATE_SWEEP_RECEIPT_SHA')
+          receipt={'schema':'AVRORA_PUBLIC_SHADOW_MULTIFAMILY_BATCH_V1',
+            'run_id':os.environ['GITHUB_RUN_ID'],
+            'private_code_sha':os.environ['PRIVATE_CODE_SHA'],
+            'private_data_sha':os.environ['PRIVATE_DATA_SHA'],
+            'private_report_sha256':hashlib.sha256(raw).hexdigest(),
+            'research_hour_index':int(os.environ['RESEARCH_UTC_HOUR']),
+            'tested':obj['count'],
+            'family_count':6,'long_short':True,
+            'train_and_validation_positive':obj['summaries']['train_and_validation_positive'],
+            'min_validation_trades_30':obj['summaries']['min_validation_trades_30'],
+            'check2':'NOT_INDEPENDENTLY_RECONSTRUCTED',
+            'status':'RESEARCH_MODELLED_DISCOVERY_ONLY',
+            'real':'OFF','holdout':'SEALED','oos':False,'maker_fill_proven':False,
+            'full_private_results_persisted':False}
+          pathlib.Path('sweep_public_summary.json').write_text(json.dumps(
+            receipt,sort_keys=True,separators=(',',':'))+'\n')
+          print('PASS_BOUNDED_SHADOW_SWEEP_AGGREGATE',receipt['tested'],
+                receipt['private_report_sha256'])
+          PY
+      - name: Publish public non-sensitive aggregate only
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-multifamily-shadow-aggregate-${{ github.run_id }}
+          path: sweep_public_summary.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Destroy all private code, raw panel, result ledger and logs
+        if: ${{ always() }}
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/private_code" "$GITHUB_WORKSPACE/private_source"
+          rm -f "$GITHUB_WORKSPACE/sweep_private_full.json" "$RUNNER_TEMP/sweep_run.log" "$RUNNER_TEMP/sweep_unittests.log"
