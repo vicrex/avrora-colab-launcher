@@ -1,0 +1,111 @@
+name: AVRORA private SQ05 code validation (launcher only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/private-sq05-readonly-test.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-sq05-readonly-validation
+  cancel-in-progress: false
+
+jobs:
+  private-sq05-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      CODE_SHA: dd8cf6d8899db5a28366dee5a3bab06da7e4acaf
+    steps:
+      - name: Check narrowly scoped private-code read credential
+        env:
+          HAVE_CODE_KEY: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAVE_CODE_KEY" != 'true' ]]; then
+            echo 'BLOCKED_PRIVATE_AVRORA_READONLY_CODE_KEY_MISSING'
+            exit 2
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: dd8cf6d8899db5a28366dee5a3bab06da7e4acaf
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Ensure pinned checkout and byte-exact migrated strategies
+        env:
+          PARENT_SHA: dd8cf6d8899db5a28366dee5a3bab06da7e4acaf
+        run: |
+          set -euo pipefail
+          cd private_code
+          test "$(git rev-parse HEAD)" = "$PARENT_SHA"
+          python - <<'PY'
+          import pathlib, subprocess
+          root=pathlib.Path('research/strategies/sq05')
+          expected={
+            'tools/structural_short.py':'d97d706e2df55ddbc8a7be66b2040c9b929710e9',
+            'tools/structural_short_check2.py':'fda5d3220907f2d6c9a86329a5594b3ad0aea48f',
+            'tools/vector_squeeze_grid.py':'9e61ea0c70d72235055628506f1f8c2b05136d07',
+            'tools/vector_squeeze_grid_check2.py':'0bf40e5a49cf4e44a560ca96b964adf1d05a13d8',
+            'tools/sq05_asset_ablation.py':'3070028ef3e6e305a8d582746b05022693d91ed8',
+            'tools/full13_wave_colab.py':'eb765440d5e095cad2614803ad3638eaa90f6410',
+            'tools/hourly_wave_research.py':'9be8ba9d244e82908c13986c178b43e7de7f4682',
+            'tools/hourly_wave_check2.py':'43d9027272e98c167d03d3740d8922ea100c4706',
+            'research/structural_short_prereg_v3.json':'4b70ab96de92392cdf3cd15e5ca8f1d23d6dea07',
+            'research/vector_squeeze_grid_prereg_v1.json':'f97eb2c49ef616d165470a1bcdb90f426aaf3077',
+            'research/sq05_asset_mechanism_ablation_prereg_v1.json':'55169d0b824db144f06619740f900c25b870e9d0',
+            'research/hourly_wave_prereg.json':'9b59bf5ea900964c1194d58fafe57f7627291743',
+            'tools/vector_insight_lab.py':'e2538e385f27feb16d2c721428dfeee3ba752c97',
+          }
+          for relative,blob in expected.items():
+              obj=str(root/relative)
+              actual=subprocess.check_output(['git','hash-object',obj],text=True).strip()
+              if actual!=blob:raise SystemExit('BLOCKED_PRIVATE_CODE_BLOB_MISMATCH')
+          print('PASS_PRIVATE_SQ05_EXACT_SOURCE_BLOBS',len(expected))
+          PY
+      - name: Test private SQ05 original and independent CHECK2 offline
+        run: |
+          set -euo pipefail
+          cd private_code/research/strategies/sq05
+          if ! python -m unittest discover -s tests -p 'test_*.py' > "$RUNNER_TEMP/sq05_tests.log" 2>&1; then
+            echo 'BLOCKED_PRIVATE_SQ05_CHECK2_UNIT_TESTS'
+            exit 3
+          fi
+          echo 'PASS_PRIVATE_SQ05_ALL_ORIGINAL_UNIT_TESTS'
+      - name: Test frozen prospective time-of-knowledge probe offline
+        run: |
+          set -euo pipefail
+          cd private_code
+          if ! python -m unittest research.insight_map.test_sol_sq05_prospective_probe > "$RUNNER_TEMP/probe_tests.log" 2>&1; then
+            echo 'BLOCKED_PRIVATE_SQ05_FORWARD_PROBE_UNIT_TESTS'
+            exit 4
+          fi
+          echo 'PASS_PRIVATE_SQ05_FORWARD_TIMESTAMP_CHECKS'
+      - name: Publish non-sensitive test status only
+        if: ${{ success() }}
+        run: |
+          printf '{"schema":"AVRORA_PRIVATE_SQ05_READONLY_CI_V1","status":"PASS_OFFLINE_TESTS_ONLY","pinned_private_sha":"dd8cf6d8899db5a28366dee5a3bab06da7e4acaf","real":"OFF","holdout":"SEALED","economic_forward_test":false,"maker_fill_proven":false}\n' > private_sq05_check_receipt.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ success() }}
+        with:
+          name: private-sq05-source-check-${{ github.run_id }}
+          path: private_sq05_check_receipt.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Destroy private code checkout and temporary test logs
+        if: ${{ always() }}
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/private_code"
+          rm -f "$RUNNER_TEMP/sq05_tests.log" "$RUNNER_TEMP/probe_tests.log"
