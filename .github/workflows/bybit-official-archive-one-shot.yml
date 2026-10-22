@@ -1,0 +1,34 @@
+name: AVRORA Bybit official archive availability (one-shot transport test)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/bybit-official-archive-one-shot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  static-archive-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+    steps:
+      - name: Check approved public Bybit historical archive (no auth, no proxy, no trading)
+        shell: bash
+        run: |
+          set -euo pipefail
+          listing="https://public.bybit.com/trading/SOLUSDT/"
+          verified_old_file="https://public.bybit.com/trading/SOLUSDT/SOLUSDT2026-07-01.csv.gz"
+          status_listing="$(curl --location --silent --show-error --head --max-time 25 --output /dev/null --write-out '%{http_code}' "$listing" || true)"
+          status_archive="$(curl --location --silent --show-error --head --max-time 25 --output /dev/null --write-out '%{http_code}' "$verified_old_file" || true)"
+          printf 'BYBIT_OFFICIAL_PUBLIC_ARCHIVE listing_http=%s old_file_http=%s\n' "$status_listing" "$status_archive"
+          if [[ "$status_listing" != '200' || "$status_archive" != '200' ]]; then
+            echo 'BLOCKED_BYBIT_STATIC_ARCHIVE_FROM_GITHUB_RUNNER'
+            exit 2
+          fi
+          echo 'PASS_BYBIT_OFFICIAL_STATIC_ARCHIVE_ACCESS_ONLY'
