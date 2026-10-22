@@ -94,6 +94,39 @@ class StructuralShortTests(unittest.TestCase):
         retests=a.find_retest_events(broken,"2026-07-01","BTCUSDT",p)
         self.assertFalse(any(x["signal_i"]==k for x in retests))
 
+    def test_v3_squeeze_signal_is_causal_and_independent(self):
+        # Artificial controlled compression after prolonged downtrend;
+        # do not use historical profitability to design this fixture.
+        base=candles()
+        t=350
+        barlist=list(base)
+        for i in range(t-16,t-8):
+            ts,op,hi,lo,cl=barlist[i]
+            barlist[i]=(ts,op,max(hi,cl*1.008),min(lo,cl*0.992),cl)
+        flat=barlist[t-9][4]
+        for i in range(t-8,t):
+            ts,op,hi,lo,cl=barlist[i]
+            barlist[i]=(ts,flat,flat*1.0004,flat*.9996,flat)
+        ts,op,hi,lo,cl=barlist[t]
+        barlist[t]=(ts,flat,flat*1.001,flat*0.987,flat*0.988)
+        first=a.find_squeeze_events(barlist,"2026-07-01","BTCUSDT",self.manifest["fixed_parameters"])
+        second=b.derive_squeezes(barlist,"2026-07-01","BTCUSDT")
+        self.assertEqual([e["signal_i"] for e in first],[e["signal_i"] for e in second])
+        self.assertTrue(any(e["signal_i"]==t for e in first))
+        for x,y in zip(first,second):
+            b.assert_equal({k:v for k,v in x.items() if k!="bars"},
+                           {k:v for k,v in y.items() if k!="bars"})
+            self.assertLess(x["signal_t"],x["entry_t"])
+        mutated=list(barlist)
+        for i in range(t+2,t+8):
+            ts,op,hi,lo,cl=mutated[i]
+            mutated[i]=(ts,op,max(hi,op*1.12),min(lo,op*.89),op)
+        changed=a.find_squeeze_events(mutated,"2026-07-01","BTCUSDT",
+                                      self.manifest["fixed_parameters"])
+        self.assertEqual(
+          [{k:v for k,v in e.items() if k!="bars"} for e in first if e["signal_i"]==t],
+          [{k:v for k,v in e.items() if k!="bars"} for e in changed if e["signal_i"]==t])
+
     def test_stop_first_in_same_candle(self):
         first=a.find_events(self.series,"2026-07-01","BTCUSDT",self.manifest["fixed_parameters"])[0]
         index=first["signal_i"]+1
