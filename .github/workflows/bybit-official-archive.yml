@@ -1,0 +1,90 @@
+name: AVRORA official Bybit six-symbol daily archive (transport only)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  official-bybit-day:
+    name: Official trades ${{ matrix.symbol }} (completed UTC day)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        symbol: [BTCUSDT, ETHUSDT, SOLUSDT, NEARUSDT, LINKUSDT, XRPUSDT]
+    concurrency:
+      group: avrora-official-bybit-archive-${{ matrix.symbol }}
+      cancel-in-progress: false
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Select prior completed UTC day; NEVER current day
+        id: day
+        run: echo "day=$(date -u -d yesterday +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - name: Skip when THIS symbol/day already has a successful GitHub artifact
+        id: cached
+        uses: actions/cache/restore@v4
+        with:
+          path: .avrora_archive_captured/${{ matrix.symbol }}/${{ steps.day.outputs.day }}.txt
+          key: bybit-official-six-v2-${{ matrix.symbol }}-${{ steps.day.outputs.day }}
+      - name: Verify transport and six-symbol safety without external requests
+        if: ${{ steps.cached.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_bybit_official_archive_transport.py' -v
+          python -m unittest discover -s tests -p 'test_bybit_six_symbol_archive.py' -v
+      - name: Download exact allowlisted official source or WAIT for publication
+        if: ${{ steps.cached.outputs.cache-hit != 'true' }}
+        id: archive
+        shell: bash
+        env:
+          SYMBOL: ${{ matrix.symbol }}
+          DAY: ${{ steps.day.outputs.day }}
+        run: |
+          set +e
+          python -m tools.bybit_official_archive_transport \
+            --symbol "$SYMBOL" --day "$DAY" --output-dir official_source
+          status=$?
+          set -e
+          if [[ "$status" -eq 3 ]]; then
+            echo "captured=false" >> "$GITHUB_OUTPUT"
+            echo "WAIT_BYBIT_OFFICIAL_ARCHIVE_$SYMBOL"
+            exit 0
+          fi
+          if [[ "$status" -ne 0 ]]; then
+            echo "BLOCKED_OFFICIAL_ARCHIVE_TRANSPORT_$SYMBOL"
+            exit "$status"
+          fi
+          echo "captured=true" >> "$GITHUB_OUTPUT"
+      - name: Upload immutable official public-market source and SHA manifest
+        if: ${{ steps.archive.outputs.captured == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-official-trades-${{ matrix.symbol }}-${{ steps.day.outputs.day }}-${{ github.run_id }}
+          path: official_source/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Cache THIS symbol/day only after successful archive artifact upload
+        if: ${{ steps.archive.outputs.captured == 'true' }}
+        env:
+          SYMBOL: ${{ matrix.symbol }}
+          DAY: ${{ steps.day.outputs.day }}
+        run: |
+          set -euo pipefail
+          mkdir -p ".avrora_archive_captured/$SYMBOL"
+          printf '%s\n' "$GITHUB_RUN_ID" > ".avrora_archive_captured/$SYMBOL/$DAY.txt"
+      - name: Write durable per-symbol-day duplicate marker
+        if: ${{ steps.archive.outputs.captured == 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .avrora_archive_captured/${{ matrix.symbol }}/${{ steps.day.outputs.day }}.txt
+          key: bybit-official-six-v2-${{ matrix.symbol }}-${{ steps.day.outputs.day }}
