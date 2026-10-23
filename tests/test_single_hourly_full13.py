@@ -27,7 +27,8 @@ class SingleHourlyFull13Tests(unittest.TestCase):
         self.assertIn("    if: ${{ github.event_name == 'schedule' }}", self.caller)
         self.assertIn("    uses: ./.github/workflows/avrora-private-wave.yml", self.caller)
         self.assertIn("    secrets: inherit", self.caller)
-        self.assertIn("  safety-smoke:\n    if: ${{ github.event_name == 'workflow_dispatch' }}", self.caller)
+        self.assertIn("  safety-smoke:", self.caller)
+        self.assertIn("    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}", self.caller)
 
     def test_reusable_full13_still_manual_and_safe(self):
         self.assertIn("  workflow_call:", self.called)
@@ -41,7 +42,7 @@ class SingleHourlyFull13Tests(unittest.TestCase):
 
     def test_manual_smoke_cannot_consume_scheduled_compute(self):
         self.assertIn("RUN_REMOTE: ${{ github.event_name == 'schedule' || inputs.mode == 'colab' }}", self.caller)
-        self.assertIn("    if: ${{ github.event_name == 'workflow_dispatch' }}", self.caller)
+        self.assertIn("    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}", self.caller)
 
 
 if __name__ == "__main__":

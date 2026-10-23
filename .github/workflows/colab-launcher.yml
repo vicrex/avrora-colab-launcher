@@ -18,6 +18,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/colab-launcher.yml'
+      - '.github/workflows/avrora-private-wave.yml'
+      - 'tests/test_gas_shadow_fallback_route.py'
       - 'tools/forward_m15_transport.py'
       - 'tests/test_forward_m15_transport.py'
 
@@ -43,7 +45,9 @@ jobs:
     secrets: inherit
 
   safety-smoke:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    # Pushes to the fallback routing contract run OFFLINE checks only.
+    # RUN_REMOTE remains false for push: no Colab/credentials/new trading.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
