@@ -116,7 +116,7 @@ class SixSymbolArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "source"
             t.collect(DAY, root, fake("LINKUSDT"), NOW, "LINKUSDT")
-            with self.assertRaisesRegex(ValueError, "BLOCKED_MANIFEST_SHA_MISMATCH"):
+            with self.assertRaisesRegex(ValueError, "BLOCKED_ARCHIVE_MANIFEST_SCOPE"):
                 t.verify(root, "SOLUSDT")
             mpath = root / "manifest.json"
             obj = json.loads(mpath.read_text())
