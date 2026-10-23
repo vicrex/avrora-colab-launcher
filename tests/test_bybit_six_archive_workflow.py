@@ -19,6 +19,8 @@ class SixArchiveWorkflowContracts(unittest.TestCase):
             ARCHIVE,
         )
         self.assertIn("fail-fast: false", ARCHIVE)
+        self.assertIn("lag=\"$((hour % 7 + 1))\"", ARCHIVE)
+        self.assertIn('date -u -d "$lag days ago"', ARCHIVE)
 
     def test_direct_gas_fallback_does_not_double_run_parent(self):
         self.assertIn("  capture-official-six-archive:", MAIN)
