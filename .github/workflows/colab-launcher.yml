@@ -20,6 +20,10 @@ on:
       - '.github/workflows/colab-launcher.yml'
       - '.github/workflows/avrora-private-wave.yml'
       - 'tests/test_gas_shadow_fallback_route.py'
+      - '.github/workflows/bybit-official-archive.yml'
+      - 'tools/bybit_official_archive_transport.py'
+      - 'tests/test_bybit_official_archive_transport.py'
+      - 'tests/test_bybit_six_symbol_archive.py'
       - 'tools/forward_m15_transport.py'
       - 'tests/test_forward_m15_transport.py'
 
@@ -133,69 +137,8 @@ jobs:
           if-no-files-found: error
           retention-days: 2
 
-  capture-official-sol-archive:
-    name: Official Bybit SOL daily history (public transport only)
-    # Reuses the EXISTING 7 * * * * schedule; no extra cron.
+  capture-official-six-archive:
+    name: Official Bybit six-symbol completed-day transport
+    # Existing schedule only; GAS backup has its own guarded reusable call.
     if: ${{ github.event_name == 'schedule' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    env:
-      REAL: "OFF"
-      HOLDOUT: "SEALED"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Identify previous completed UTC calendar day
-        id: day
-        run: |
-          echo "day=$(date -u -d yesterday +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-      - name: Check daily archive duplicate marker
-        id: cached
-        uses: actions/cache/restore@v4
-        with:
-          path: .avrora_archive_captured
-          key: bybit-official-sol-archive-v1-${{ steps.day.outputs.day }}
-      - name: Verify official archive-only transport code
-        if: ${{ steps.cached.outputs.cache-hit != 'true' }}
-        run: python -m unittest discover -s tests -p 'test_bybit_official_archive_transport.py' -v
-      - name: Capture timestamped source archive, or say WAIT
-        id: archive
-        if: ${{ steps.cached.outputs.cache-hit != 'true' }}
-        shell: bash
-        run: |
-          set +e
-          python -m tools.bybit_official_archive_transport \
-            --day "${{ steps.day.outputs.day }}" --output-dir official_source
-          status=$?
-          set -e
-          if [[ "$status" -eq 3 ]]; then
-            echo "captured=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [[ "$status" -ne 0 ]]; then
-            echo "BLOCKED_OFFICIAL_ARCHIVE_TRANSPORT"
-            exit "$status"
-          fi
-          echo "captured=true" >> "$GITHUB_OUTPUT"
-      - name: Archive immutable public source + SHA receipt for PRIVATE ingestion
-        if: ${{ steps.archive.outputs.captured == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: avrora-official-sol-history-${{ steps.day.outputs.day }}-${{ github.run_id }}
-          path: official_source/
-          if-no-files-found: error
-          retention-days: 7
-      - name: Mark source date after successful artifact upload
-        if: ${{ steps.archive.outputs.captured == 'true' }}
-        shell: bash
-        run: |
-          mkdir -p .avrora_archive_captured
-          printf '%s\n' "${{ github.run_id }}" > .avrora_archive_captured/${{ steps.day.outputs.day }}.txt
-      - name: Cache marker (re-check delivery in Google Drive independently)
-        if: ${{ steps.archive.outputs.captured == 'true' }}
-        uses: actions/cache/save@v4
-        with:
-          path: .avrora_archive_captured
-          key: bybit-official-sol-archive-v1-${{ steps.day.outputs.day }}
+    uses: ./.github/workflows/bybit-official-archive.yml
