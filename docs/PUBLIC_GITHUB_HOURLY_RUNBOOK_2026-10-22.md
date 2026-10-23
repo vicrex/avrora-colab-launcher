@@ -1,3 +1,21 @@
+## 2026-10-23 — why hourly discovery disappears, and fixed fallback route
+
+**Verified root cause by inspecting the 21-Oct operational GAS runbook and current public YAML:**
+- GitHub `schedule: 7 * * * *` on `colab-launcher.yml` is best-effort; the actual events have multi-hour gaps. A successful run after a gap proves one recovery, not an hourly SLA.
+- The existing Google Apps Script `avroraHourlyTick` already POSTs `workflow_dispatch` to `avrora-private-wave.yml` with `ref=main, inputs.mode=full13`. Its local 55-minute cooldown and GitHub recent-run check suppress some duplicates. It does **not** dispatch `colab-launcher.yml`.
+- BEFORE this change the scheduled 64-case job `multifamily-shadow-scheduled` existed only in `colab-launcher.yml` with `if: github.event_name == 'schedule'`. Thus during missed cron hours, GAS could recover FULL13/cache but **NOT** the actual 64-case hypothesis search. Repeated cache results looked green yet discovery had stopped.
+
+**Routing change:** in `avrora-private-wave.yml`, direct `workflow_dispatch(mode=full13)` from the existing GAS now also invokes the **existing** `multifamily-sweep-smoke.yml` through reusable workflow_call with inherited GitHub encrypted secrets. On `workflow_call` (parent scheduled route), that new job is SKIPPED: the parent continues to own the one original multifamily scheduled job. Manual `mode=preflight` and `mode=wave` never invoke new research. Research is still pinned private read-only, 64 frozen historical shadow cases, `REAL=OFF`, `HOLDOUT=SEALED`, without maker or OOS claims. No extra cron, trigger, token, service, Drive scope, or ChatGPT Work. A second GAS timer must NOT be installed.
+
+**Regression:** `tests/test_gas_shadow_fallback_route.py` checks routing, one unchanged public cron, workflow_call, pinned private code+data SHAs, REAL/HOLDOUT invariants. The existing public `safety-smoke` now runs offline on main pushes affecting these routes; `RUN_REMOTE=false` for push (no Colab credential access). The `workflow_dispatch mode=local` offline path remains.
+
+**Acceptance, required before claiming a fix is proven live:**
+1. Main branch GitHub Actions push safety-smoke SUCCESS and 3 new routing contract tests PASS, exact commit SHA.
+2. Existing GAS execution must be **Time-driven** (not user manual); record timestamp `DISPATCH_ACCEPTED_HTTP_204` or `SKIP_RECENT_GITHUB_RUN`.
+3. Match a dispatched `avrora-private-wave.yml` run with the same hour; require both child jobs: `private-wave` + `multifamily-shadow-first64`, with 64 actual P816 observations and SHA artifact.
+4. Verify next two unattended hours contain research (either cron main or GAS fallback) and no double-computed same-hour batch. Without this evidence classify `ROUTING_PATCH_DEPLOYED_UNVERIFIED_HOURLY`.
+5. Final economic correctness still BLOCKED by missing multifamily independent CHECK2, private full-JSON persistence, new prospective OOS and actual maker-fill/portfolio replay. Never promote to SIM/REAL.
+
 # AVRORA — public GitHub hourly runbook (2026-10-22)
 
 ## MANDATORY EXECUTION TOPOLOGY (user-confirmed, 2026-10-22)
