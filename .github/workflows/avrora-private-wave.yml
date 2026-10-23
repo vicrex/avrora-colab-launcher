@@ -33,6 +33,12 @@ jobs:
     uses: ./.github/workflows/multifamily-sweep-smoke.yml
     secrets: inherit
 
+  official-archive-gas-fallback:
+    name: Existing GAS FULL13 fallback - Bybit six-symbol delayed transport
+    # Parent schedule already calls archive exactly once. Avoid duplicate there.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'full13' }}
+    uses: ./.github/workflows/bybit-official-archive.yml
+
   private-wave:
     if: ${{ github.event_name == 'workflow_dispatch' || vars.AVRORA_PRIVATE_WAVE_ENABLED == 'true' || vars.AVRORA_FULL13_ENABLED == 'true' }}
     runs-on: ubuntu-latest
