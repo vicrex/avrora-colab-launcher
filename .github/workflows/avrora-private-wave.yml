@@ -23,6 +23,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The existing Google Apps Script hourly fallback dispatches THIS workflow with
+  # mode=full13. Without this job, a skipped GitHub cron runs FULL13/cache only
+  # and silently skips the 64-case multifamily research sweep.
+  # Do not run for workflow_call (the scheduled parent runs its own sweep).
+  multifamily-shadow-hourly-fallback:
+    name: GAS FULL13 fallback - bounded 64-case shadow sweep
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'full13' }}
+    uses: ./.github/workflows/multifamily-sweep-smoke.yml
+    secrets: inherit
+
   private-wave:
     if: ${{ github.event_name == 'workflow_dispatch' || vars.AVRORA_PRIVATE_WAVE_ENABLED == 'true' || vars.AVRORA_FULL13_ENABLED == 'true' }}
     runs-on: ubuntu-latest
