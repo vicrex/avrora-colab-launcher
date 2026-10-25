@@ -47,10 +47,12 @@ chmod 600 "$temp_dir/validated.json"
 
 # Exact one-scope request using user's own installed-app OAuth client; do NOT
 # add Cloud Platform scopes or overwrite the system ADC configuration.
+# --no-browser uses gcloud remote-bootstrap on a trusted SECOND machine that
+# also has gcloud CLI; for most users prefer the existing free GAS receiver.
 gcloud auth application-default login \
   --client-id-file="$CLIENT_JSON" \
   --scopes="$SCOPE" \
-  --no-launch-browser \
+  --no-browser \
   --disable-quota-project
 
 adc="$CLOUDSDK_CONFIG/application_default_credentials.json"
