@@ -24,12 +24,16 @@ class GasFallbackRoutingTests(unittest.TestCase):
         self.assertIn("secrets: inherit", fallback)
         self.assertNotIn("cron:", fallback)
 
-    def test_schedule_keeps_single_original_shadow_path(self):
+    def test_schedule_keeps_single_opt_in_emergency_shadow_path(self):
         launcher = PUBLIC_LAUNCHER.read_text(encoding="utf-8")
         private_wave = PRIVATE_WAVE.read_text(encoding="utf-8")
         self.assertEqual(launcher.count('cron: "7 * * * *"'), 1)
         self.assertEqual(launcher.count("  multifamily-shadow-scheduled:\n"), 1)
-        self.assertIn("github.event_name == 'schedule'", launcher)
+        self.assertIn(
+            "github.event_name == 'schedule' && "
+            "vars.AVRORA_NATIVE_MULTIFAMILY_FALLBACK_ENABLED == 'true'",
+            launcher,
+        )
         self.assertIn("uses: ./.github/workflows/multifamily-sweep-smoke.yml", launcher)
         self.assertNotIn("  schedule:", private_wave)
         self.assertNotIn("  repository_dispatch:", private_wave)
