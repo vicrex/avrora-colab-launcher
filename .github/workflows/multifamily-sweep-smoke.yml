@@ -181,8 +181,26 @@ jobs:
           path: sweep_public_summary.json
           if-no-files-found: error
           retention-days: 14
+      - name: Upload full private 64-candidate ledger to Drive and independently read back SHA
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'google-auth>=2.35,<4' 'requests>=2.31,<3'
+          python tools/private_multifamily_drive_delivery.py \
+            --input sweep_private_full.json \
+            --name "AVRORA_PRIVATE_MULTIFAMILY_${{ github.run_id }}.json" \
+            --receipt sweep_private_drive_ack.json
+      - name: Publish only the safe SHA delivery ACK (never private models)
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-multifamily-private-drive-ack-${{ github.run_id }}
+          path: sweep_private_drive_ack.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Destroy all private code, raw panel, result ledger and logs
         if: ${{ always() }}
         run: |
           rm -rf "$GITHUB_WORKSPACE/private_code" "$GITHUB_WORKSPACE/private_source"
-          rm -f "$GITHUB_WORKSPACE/sweep_private_full.json" "$RUNNER_TEMP/sweep_run.log" "$RUNNER_TEMP/sweep_unittests.log" "$GITHUB_WORKSPACE/p816_panel_audit_private.json" "$RUNNER_TEMP/p816_audit_unit.log" "$RUNNER_TEMP/p816_audit_run.log"
+          rm -f "$GITHUB_WORKSPACE/sweep_private_full.json" "$GITHUB_WORKSPACE/sweep_private_drive_ack.json" "$RUNNER_TEMP/sweep_run.log" "$RUNNER_TEMP/sweep_unittests.log" "$GITHUB_WORKSPACE/p816_panel_audit_private.json" "$RUNNER_TEMP/p816_audit_unit.log" "$RUNNER_TEMP/p816_audit_run.log"
