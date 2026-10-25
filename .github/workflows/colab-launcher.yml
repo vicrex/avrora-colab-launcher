@@ -35,10 +35,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Scientific discovery: 64 unique LONG/SHORT variants/hour on already studied P816;
-  # invokes PRIVATE code via read-only key, NEVER trades, and NO additional cron.
+  # Emergency fallback only. GAS workflow_dispatch is the authoritative hourly
+  # multifamily route; keeping the native cron opt-in prevents duplicate hour/SHA
+  # writes when GitHub's delayed schedule overlaps an already completed GAS run.
   multifamily-shadow-scheduled:
-    if: ${{ github.event_name == 'schedule' }}
+    if: ${{ github.event_name == 'schedule' && vars.AVRORA_NATIVE_MULTIFAMILY_FALLBACK_ENABLED == 'true' }}
     uses: ./.github/workflows/multifamily-sweep-smoke.yml
     secrets: inherit
 
