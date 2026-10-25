@@ -87,9 +87,9 @@ class FreeDriveGasTests(unittest.TestCase):
         yml = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("AVRORA_GAS_REPORT_WEBAPP_URL", yml)
         self.assertIn("AVRORA_GAS_REPORT_HMAC_KEY", yml)
-        self.assertIn("private_gas_drive_delivery.py", yml)
+        self.assertIn("python -m tools.private_gas_drive_delivery", yml)
         self.assertIn("BLOCKED_PRIVATE_REPORT_DELIVERY_NOT_AUTHORIZED", yml)
-        self.assertLess(yml.index("private_gas_drive_delivery.py"),
+        self.assertLess(yml.index("python -m tools.private_gas_drive_delivery"),
                         yml.index("private_multifamily_drive_delivery.py"))
         self.assertIn("path: sweep_private_drive_ack.json", yml)
         self.assertNotIn("path: sweep_private_full.json", yml)
