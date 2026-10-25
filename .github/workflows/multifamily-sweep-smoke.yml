@@ -35,6 +35,10 @@ jobs:
             echo 'BLOCKED_MULTIFAMILY_MISSING_READONLY_CREDENTIAL'
             exit 2
           fi
+      - name: Checkout PUBLIC executor helpers (required for private Drive uploader)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Checkout immutable PRIVATE AVRORA research engine
         uses: actions/checkout@v4
         with:
@@ -183,7 +187,7 @@ jobs:
           retention-days: 14
       - name: Upload full private 64-candidate ledger to Drive and independently read back SHA
         env:
-          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+          AVRORA_PRIVATE_DRIVE_ADC_JSON_B64: ${{ secrets.AVRORA_PRIVATE_DRIVE_ADC_JSON_B64 }}
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check -q 'google-auth>=2.35,<4' 'requests>=2.31,<3'
