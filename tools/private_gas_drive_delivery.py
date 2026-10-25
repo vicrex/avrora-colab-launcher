@@ -38,7 +38,8 @@ def payload_and_ack(raw: bytes, run_id: str, secret_hex: str) -> tuple[dict, dic
     if not isinstance(secret_hex, str) or len(secret_hex) != 64:
         raise ValueError("BLOCKED_GAS_HMAC_SECRET")
     try:
-        secret_bytes = bytes.fromhex(secret_hex)
+        bytes.fromhex(secret_hex)  # reject nonhex keys; GAS signs with the 64-character ASCII key
+        secret_bytes = secret_hex.encode("ascii")
     except ValueError as e:
         raise ValueError("BLOCKED_GAS_HMAC_SECRET") from e
     digest, receipt_sha = validate_report(raw)
