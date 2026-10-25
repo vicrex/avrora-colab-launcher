@@ -325,7 +325,7 @@ jobs:
         run: |
           set -euo pipefail
           cd private_gate
-          python research/public_offline_feature_gate.py
+          python -m research.public_offline_feature_gate
       - name: Destroy private gate source
         if: always()
         shell: bash
