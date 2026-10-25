@@ -1,0 +1,87 @@
+name: AVRORA private graph-ingest PR76 offline gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-private-graph-ingest-pr76
+  cancel-in-progress: false
+
+jobs:
+  offline:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PRIVATE_CODE_SHA: bae9e71fee5db5f8367c6f636015fa1b48f9aba5
+    steps:
+      - name: Verify read-only private source credential
+        shell: bash
+        env:
+          HAVE_CODE: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAVE_CODE" != 'true' ]]; then
+            echo 'BLOCKED_PRIVATE_GRAPH_TEST_MISSING_READONLY_CREDENTIAL'
+            exit 2
+          fi
+
+      - name: Checkout immutable PRIVATE AVRORA PR head
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: bae9e71fee5db5f8367c6f636015fa1b48f9aba5
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify exact private SHA and run sanitized offline tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C private_code rev-parse HEAD)" = "$PRIVATE_CODE_SHA"
+          cd private_code
+          modules=(
+            research.insight_map.test_multifamily_stage
+            research.insight_map.test_multifamily_graph
+            research.insight_map.test_multifamily_vector_adapter
+            research.insight_map.test_multifamily_canonical_ingest
+          )
+          failed=0
+          for module in "${modules[@]}"; do
+            safe="${module//./_}"
+            log="$RUNNER_TEMP/${safe}.log"
+            if python -m unittest "$module" >"$log" 2>&1; then
+              echo "PASS_PRIVATE_OFFLINE_MODULE $module"
+            else
+              grep -E '^(Ran |FAILED)' "$log" | tail -2 || true
+              echo "BLOCKED_PRIVATE_OFFLINE_MODULE $module"
+              failed=1
+            fi
+            rm -f "$log"
+          done
+          if [[ "$failed" -ne 0 ]]; then
+            exit 3
+          fi
+          echo 'PASS_PRIVATE_GRAPH_INGEST_PR76_OFFLINE_GATE'
+
+      - name: Destroy private checkout and temporary logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/private_code"
+          rm -f "$RUNNER_TEMP"/research_insight_map_test_multifamily_*.log
