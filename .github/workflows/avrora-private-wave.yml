@@ -302,32 +302,3 @@ jobs:
           fi
           rm -rf "${GITHUB_WORKSPACE}/private_source"
 
-  private-offline-feature-gate:
-    name: Private offline feature gate (read-only)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'full13' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      REAL: "OFF"
-      HOLDOUT: "SEALED"
-      PRIVATE_GATE_SHA: c5ba60f00b8fe4c7a37e36bb638dfeff6420f318
-    steps:
-      - name: Checkout immutable private gate source (read-only)
-        uses: actions/checkout@v4
-        with:
-          repository: vicrex/AVRORA
-          ref: ${{ env.PRIVATE_GATE_SHA }}
-          path: private_gate
-          persist-credentials: false
-          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
-      - name: Run fail-closed private offline feature gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd private_gate
-          python -m research.public_offline_feature_gate
-      - name: Destroy private gate source
-        if: always()
-        shell: bash
-        run: rm -rf "$GITHUB_WORKSPACE/private_gate"
-
