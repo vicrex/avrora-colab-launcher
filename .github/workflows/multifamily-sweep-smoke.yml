@@ -197,6 +197,7 @@ jobs:
               echo 'BLOCKED_FREE_GAS_INCOMPLETE_CONFIGURATION'
               exit 7
             fi
+            python -m pip install --disable-pip-version-check -q 'requests>=2.31,<3'
             python tools/private_gas_drive_delivery.py \
               --input sweep_private_full.json \
               --receipt sweep_private_drive_ack.json
