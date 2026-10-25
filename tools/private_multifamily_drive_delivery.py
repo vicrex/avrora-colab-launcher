@@ -67,7 +67,7 @@ def main() -> None:
         raise SystemExit("BLOCKED_PRIVATE_DRIVE_RUN_ID_MISMATCH")
     if os.environ.get("REAL", "OFF") != "OFF" or os.environ.get("HOLDOUT", "SEALED") != "SEALED":
         raise SystemExit("BLOCKED_PRIVATE_DRIVE_SAFETY_GATE")
-    if not os.environ.get("AVRORA_COLAB_ADC_JSON_B64"):
+    if not os.environ.get("AVRORA_PRIVATE_DRIVE_ADC_JSON_B64"):
         raise SystemExit("BLOCKED_PRIVATE_DRIVE_ADC_MISSING")
     input_bytes = Path(args.input).read_bytes()
     try:
@@ -82,9 +82,14 @@ def main() -> None:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
 
-        creds = json.loads(base64.b64decode(os.environ["AVRORA_COLAB_ADC_JSON_B64"], validate=True))
+        creds = json.loads(base64.b64decode(os.environ["AVRORA_PRIVATE_DRIVE_ADC_JSON_B64"], validate=True))
         if not isinstance(creds, dict) or creds.get("type") != "authorized_user":
             raise ValueError("wrong credential type")
+        configured = set(creds.get("scopes") or [])
+        allowed = {"https://www.googleapis.com/auth/drive",
+                   "https://www.googleapis.com/auth/drive.file"}
+        if not (configured & allowed):
+            raise SystemExit("BLOCKED_PRIVATE_DRIVE_SCOPE_MISSING")
         credential = Credentials.from_authorized_user_info(creds)
         stage = "TOKEN_REFRESH"
         credential.refresh(Request())
