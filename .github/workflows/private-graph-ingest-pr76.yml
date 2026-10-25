@@ -2,6 +2,10 @@ name: AVRORA private graph-ingest PR76 offline gate
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/private-graph-ingest-pr76.yml'
 
 permissions:
   contents: read
