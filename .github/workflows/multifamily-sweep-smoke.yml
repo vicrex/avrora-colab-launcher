@@ -198,7 +198,7 @@ jobs:
               exit 7
             fi
             python -m pip install --disable-pip-version-check -q 'requests>=2.31,<3'
-            python tools/private_gas_drive_delivery.py \
+            python -m tools.private_gas_drive_delivery \
               --input sweep_private_full.json \
               --receipt sweep_private_drive_ack.json
           elif [[ -n "${AVRORA_PRIVATE_DRIVE_ADC_JSON_B64:-}" ]]; then
