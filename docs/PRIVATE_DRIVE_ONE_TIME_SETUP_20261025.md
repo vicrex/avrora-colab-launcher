@@ -1,59 +1,46 @@
-# AVRORA — одноразовая безопасная настройка записи полного отчёта в Drive
-Дата: 25 октября 2026. **Это руководство для владельца**, не объявление об успешном получении OAuth.
+# AVRORA — БЕСПЛАТНАЯ запись полных отчётов в Google Drive
 
-## Уже исправлено в GitHub
+**Без банковской карты, Google Cloud trial, Cloud Shell и платной подписки.**
+Дата: 25 октября 2026. Никаких новых часовых триггеров не создавать. У нас уже есть существующие PUBLIC GitHub Actions и Google Apps Script для расписания.
 
-- PR #61 добавил обязательную запись полного приватного отчёта из 64 кандидатов в Drive, побайтовое чтение обратно и SHA-256 ACK. Отказ записи = FAILED, а не ложный SUCCESS.
-- PR #62 исправил отсутствие checkout публичных скриптов и отделил Drive-secret `AVRORA_PRIVATE_DRIVE_ADC_JSON_B64` от Colab-only `AVRORA_COLAB_ADC_JSON_B64`.
-- Запуск [40181486935](https://github.com/vicrex/avrora-colab-launcher/actions/runs/40181486935) уже вычислил 64 модели, но честно завершился `BLOCKED_PRIVATE_DRIVE_ADC_MISSING`. Он **не** сохранил полный JSON.
-- Новых почасовых таймеров и Cloud Browser/Work нет. REAL OFF; HOLDOUT SEALED.
+## Подтверждённое состояние
 
-## Почему требуется личная авторизация
+- PR #61 и #62 исправили исходную ошибку: полный отчёт раньше уничтожался после публикации короткой сводки, а затем обнаружился отсутствующий публичный helper. Сейчас расчёт 64 исторических вариантов завершается, но без разрешённого канала в Drive шаг доставки **правильно падает**, а не даёт ложный зелёный статус.
+- До настройки нового канала был `BLOCKED_PRIVATE_DRIVE_ADC_MISSING`, см. [реальный запуск №40181486935](https://github.com/vicrex/avrora-colab-launcher/actions/runs/40181486935).
+- Новая **бесплатная** доставка: GitHub подписывает полный приватный JSON секретным HMAC; маленькое веб-приложение Google Apps Script исполняется **от лица владельца** и записывает его в заданную папку Drive, затем побайтово читает результат обратно и возвращает SHA. Публичный GitHub содержит только несекретную сводку и SHA-подтверждение, а НЕ частные стратегии.
+- **Код создан в GitHub, но веб-приложение Apps Script ещё не установлено от твоего имени и секреты не настроены.** Реальное end-to-end подтверждение пока отсутствует.
+- REAL OFF; HOLDOUT SEALED. Нет ChatGPT Work, новых таймеров или покупок.
 
-GitHub secret отсутствует. Мы **не можем** получить из ChatGPT Google Drive-коннектора OAuth refresh-token для автономного GitHub runner и не должны копировать секреты через публичные ссылки, чат или issues. Исходный Colab-токен имеет только Colab/email scopes; Google Drive выдавал 403.
+## Одноразовая настройка (обычный бесплатный аккаунт Google)
 
-**Важное предупреждение:** Для записи в существующую закрытую папку через текущий REST-код используется `https://www.googleapis.com/auth/drive`. Этот restricted scope потенциально даёт программе доступ ко **всему Drive соответствующего Google-аккаунта**. Сам код обращается только к папке AVRORA, но OAuth разрешение технически шире. Безопаснее использовать отдельный Google-аккаунт, которому владелец предоставил Writer только на папку AVRORA. Не используйте `drive.file` вслепую: он не гарантирует доступ к уже существующей папке.
+1. Перейди в **https://script.google.com/home/projects/create** под владельцем папки AVRORA. В созданном проекте замени содержимое `Code.gs` на код из [tools/avrora_private_drive_receiver.gs](https://github.com/vicrex/avrora-colab-launcher/blob/main/tools/avrora_private_drive_receiver.gs). Лучше назови проект `AVRORA Private Drive Receiver`. Не трогай старый проект с `avroraHourlyTick`: этот новый проект **НЕ добавляет таймер**.
+2. Сверху выбери функцию **`avroraCreateSharedSecretOnce`** и нажми **Выполнить** ровно один раз. При первом запуске Google попросит разрешение для своего скрипта на работу с Drive. Разрешай только если показан именно твой новый проект и выбран правильный аккаунт. Результат появится в журнале выполнения как `COPY_TO_GITHUB_SECRET_AVRORA_GAS_REPORT_HMAC_KEY=...`. Это **секрет**. Не публикуй его и не присылай в ChatGPT. Копируй только в GitHub Secret.
+3. Нажми **Развернуть → Новое развёртывание → тип Веб-приложение**. Выбери **«Выполнять от моего имени»** и доступ **«Все» / Anyone** — GitHub должен иметь возможность вызывать адрес без Google-авторизации. Сохранность данных обеспечивает проверка HMAC внутри `doPost`; **без корректного секретного ключа запись не выполняется**. Скопируй конечную ссылку **`https://script.google.com/macros/s/.../exec`**. Если такого режима доступа нет или не хочешь публичный вход с HMAC-защитой, **не разворачивай** и остановись: без иной авторизации автозапись работать не будет.
+4. Открой [GitHub → Actions secrets](https://github.com/vicrex/avrora-colab-launcher/settings/secrets/actions). Создай **два Repository secret**:
+   - `AVRORA_GAS_REPORT_HMAC_KEY` = ключ без префикса `COPY_TO_GITHUB_SECRET_...`, только 64 шестнадцатеричных символа из журнала.
+   - `AVRORA_GAS_REPORT_WEBAPP_URL` = ссылка веб-приложения, оканчивающаяся на `/exec`.
+   Не изменяй `AVRORA_COLAB_ADC_JSON_B64` и старые ключи read-only checkout. Не создавай никакие секреты из содержимого приватной стратегии.
+5. Ничего не запускай вручную ради проверки: посмотри **следующий существующий** почасовой запуск [AVRORA GitHub Actions](https://github.com/vicrex/avrora-colab-launcher/actions/workflows/multifamily-sweep-smoke.yml). При успешной доставке шаг `Deliver full private ledger to Drive via FREE owner GAS...` выдаст `PASS_PRIVATE_MULTIFAMILY_DRIVE_READBACK_SHA`, а Actions выпустит отдельный безопасный ZIP с SHA ACK.
 
-## Один раз в Google Cloud Console
+## Почему это бесплатно
 
-1. Выберите Google-аккаунт, который будет выполнять архивирование. Если это отдельная учётная запись, владелец Drive должен поделиться папкой `AVRORA_WAVE5_RESEARCH_20261020` с ней как **Редактором**.
-2. В Google Cloud Console в своём проекте включите **Google Drive API** и в **Google Auth Platform** настройте OAuth consent. При режиме Testing добавьте выбранный Google-аккаунт как test user.
-3. В **Clients / OAuth client IDs** создайте OAuth client типа **Desktop app** и скачайте JSON в свой Google Cloud Shell. Не публикуйте его в GitHub и не присылайте в чат.
-4. Для долгого автономного режима учитывайте: **External + Testing** обычно выдаёт refresh-token, истекающий через **7 дней** для Drive scope; до эксплуатационного режима потребуется изменить publishing status на **In production**, если Google разрешит, с учётом правил проверки restricted scope. Один успешный час не доказывает многомесячный доступ.
+Google Apps Script + Google Drive доступны на обычном аккаунте Google в пределах **бесплатных квот**; GitHub Actions в публичном репозитории используется в разрешённых бесплатных пределах, но лимиты и правила сервисов могут измениться. **Не требуется** заходить в `console.cloud.google.com`, привязывать карту или активировать рекламируемый 90-дневный пробный период Google Cloud. Если когда-нибудь потребуются платные возможности — останавливаемся, а не подключаем их автоматически.
 
-## Запуск существующим Cloud Shell
+## Важные ограничения безопасности
 
-В своём Google Cloud Shell, авторизованном GitHub-аккаунтом `vicrex`:
+- Вариант `Anyone` означает публичный HTTPS-адрес для POST-запросов, **но не публичную папку Drive**. Приёмник проверяет криптографическую подпись HMAC и контрольную сумму, запрещает `REAL`, `HOLDOUT`, чужие схемы и слишком большие тела, защищает от одновременной записи и проверяет Drive SHA после чтения. Ключ должен храниться только в `Script Properties` и encrypted GitHub secret.
+- Это новый **веб-приёмник без расписания**, он никак не заменяет существующий Apps Script `avroraHourlyTick`; два новых cron/таймера не нужны.
+- Drive не должен предоставлять доступ «всем на редактирование»; файл остаётся в приватной папке `AVRORA_WAVE5_RESEARCH_20261020`.
+- Не путать исторические вычисления и прибыльную торговлю: независимый CHECK2 новых стратегий, полная запись в векторный граф, настоящее OOS и проверка maker-fill ещё не доказаны.
+- Настройку должен выполнить **владелец Google-аккаунта** один раз; ChatGPT не имеет его токена Apps Script и не может создавать развёртывание или шифрованные GitHub secrets от его имени без дополнительного доступа.
 
-```bash
-cd ~/avrora-colab-launcher
-git pull --ff-only
-bash tools/connect_private_drive_cloud_shell.sh "$HOME/client_secret.json"
-```
+## Проверка и восстановление
 
-Замените путь на **точный путь к скачанному Desktop OAuth client JSON**, если он называется иначе.
+- Не настроены оба секрета → `BLOCKED_PRIVATE_REPORT_DELIVERY_NOT_AUTHORIZED`.
+- Введён только один → `BLOCKED_FREE_GAS_INCOMPLETE_CONFIGURATION`.
+- Ошибка подписи, прав Drive, размера или SHA → `BLOCKED_GAS_PRIVATE_DELIVERY_ACK` или `POST`; у такого запуска статус FAILURE.
+- Успешный GET `doGet` показывает лишь `AVRORA_GAS_PRIVATE_RECEIVER_READY_NO_GET_DATA`, но **не доказывает** право записи; доказательство — подписанный POST + SHA обратного чтения.
+- После смены исходника Apps Script нужно **обновить deployment на новую версию**; ссылка на старую развёрнутую версию не обновляется автоматически.
+- Критерий полной автономности: два независимых часовых цикла с SHA-подтверждением полного приватного результата, записью в private graph и независимой проверкой CHECK2. До этого не объявлять `DONE`.
 
-Скрипт открывает отдельное согласие только на Drive, используя ваш OAuth client через `gcloud auth application-default login --client-id-file=... --scopes=... --no-launch-browser`. Код подтверждения вводите только в Cloud Shell, **никогда в ChatGPT**. Cloud SDK ADC помещён во временную директорию, не затирает системные учётные данные Cloud Shell.
-
-После авторизации скрипт **до установки секрета**:
-- проверяет фактически выданные Drive scopes, отклоняя лишние `cloud-platform` и Colab;
-- проверяет доступ к конкретной приватной папке;
-- создаёт небольшой безобидный тестовый файл внутри папки, считывает его обратно и проверяет SHA;
-- удаляет тестовый файл;
-- только после этого шифрует и сохраняет новый GitHub Actions secret `AVRORA_PRIVATE_DRIVE_ADC_JSON_B64`, проверяя наличие имени в GH;
-- удаляет временные файлы учётных данных.
-
-Ожидаемый маркер: `PASS_PRIVATE_DRIVE_SECRET_INSTALLED_AND_VERIFIED_BY_NAME`.
-На отказе любой проверки токен в GitHub не устанавливается.
-
-## Что проверять после
-
-Откройте существующий [публичный GitHub Actions multifamily workflow](https://github.com/vicrex/avrora-colab-launcher/actions/workflows/multifamily-sweep-smoke.yml) после **следующего уже предусмотренного запуска**. Шаг `Upload full private 64-candidate ledger...` обязан выдать `PASS_PRIVATE_MULTIFAMILY_DRIVE_READBACK_SHA` и JSON ACK artifact. Затем нужна внешняя проверка **полного** сохранённого JSON по SHA, append-only запись в private graph, независимый CHECK2 и два отдельных автоматических полных цикла; без этого статус неполный. GitHub job зелёного цвета **недостаточно**.
-
-Не запускать REAL, не открывать holdout, не менять расписание, не переносить private стратегии/свечи в публичные GitHub artifacts.
-
-## Источники
-
-Google Cloud ADC: https://docs.cloud.google.com/sdk/gcloud/reference/auth/application-default/login
-Google Drive scopes: https://developers.google.com/workspace/drive/api/guides/api-specific-auth
-Google OAuth refresh token limits: https://developers.google.com/identity/protocols/oauth2
+Официальные справки: https://developers.google.com/apps-script/guides/web , https://developers.google.com/apps-script/guides/services/authorization , https://developers.google.com/apps-script/guides/services/quotas .
