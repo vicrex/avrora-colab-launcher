@@ -185,16 +185,32 @@ jobs:
           path: sweep_public_summary.json
           if-no-files-found: error
           retention-days: 14
-      - name: Upload full private 64-candidate ledger to Drive and independently read back SHA
+      - name: Deliver full private ledger to Drive via FREE owner GAS, or separately approved Drive OAuth
         env:
+          AVRORA_GAS_REPORT_WEBAPP_URL: ${{ secrets.AVRORA_GAS_REPORT_WEBAPP_URL }}
+          AVRORA_GAS_REPORT_HMAC_KEY: ${{ secrets.AVRORA_GAS_REPORT_HMAC_KEY }}
           AVRORA_PRIVATE_DRIVE_ADC_JSON_B64: ${{ secrets.AVRORA_PRIVATE_DRIVE_ADC_JSON_B64 }}
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check -q 'google-auth>=2.35,<4' 'requests>=2.31,<3'
-          python tools/private_multifamily_drive_delivery.py \
-            --input sweep_private_full.json \
-            --name "AVRORA_PRIVATE_MULTIFAMILY_${{ github.run_id }}.json" \
-            --receipt sweep_private_drive_ack.json
+          if [[ -n "${AVRORA_GAS_REPORT_WEBAPP_URL:-}" || -n "${AVRORA_GAS_REPORT_HMAC_KEY:-}" ]]; then
+            if [[ -z "${AVRORA_GAS_REPORT_WEBAPP_URL:-}" || -z "${AVRORA_GAS_REPORT_HMAC_KEY:-}" ]]; then
+              echo 'BLOCKED_FREE_GAS_INCOMPLETE_CONFIGURATION'
+              exit 7
+            fi
+            python -m pip install --disable-pip-version-check -q 'requests>=2.31,<3'
+            python -m tools.private_gas_drive_delivery \
+              --input sweep_private_full.json \
+              --receipt sweep_private_drive_ack.json
+          elif [[ -n "${AVRORA_PRIVATE_DRIVE_ADC_JSON_B64:-}" ]]; then
+            python -m pip install --disable-pip-version-check -q 'google-auth>=2.35,<4' 'requests>=2.31,<3'
+            python tools/private_multifamily_drive_delivery.py \
+              --input sweep_private_full.json \
+              --name "AVRORA_PRIVATE_MULTIFAMILY_${{ github.run_id }}.json" \
+              --receipt sweep_private_drive_ack.json
+          else
+            echo 'BLOCKED_PRIVATE_REPORT_DELIVERY_NOT_AUTHORIZED'
+            exit 8
+          fi
       - name: Publish only the safe SHA delivery ACK (never private models)
         if: ${{ success() }}
         uses: actions/upload-artifact@v4

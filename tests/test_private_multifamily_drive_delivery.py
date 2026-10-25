@@ -58,7 +58,9 @@ class PrivateDriveDeliveryContract(unittest.TestCase):
     def test_public_runner_fails_closed_without_private_readback(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("private_multifamily_drive_delivery.py", text)
-        self.assertIn("Upload full private 64-candidate ledger", text)
+        self.assertIn("Deliver full private ledger to Drive via FREE owner GAS", text)
+        self.assertIn("BLOCKED_PRIVATE_REPORT_DELIVERY_NOT_AUTHORIZED", text)
+        self.assertIn("python -m tools.private_gas_drive_delivery", text)
         self.assertIn("sweep_private_drive_ack.json", text)
         self.assertIn("AVRORA_PRIVATE_DRIVE_ADC_JSON_B64", text)
         self.assertIn("Checkout PUBLIC executor helpers", text)
