@@ -26,6 +26,8 @@ ZERO = "0" * 64
 MAX_FRAME_BYTES = 1_000_000
 MAX_TOTAL_BYTES = 80_000_000
 MAX_DURATION_SECONDS = 300
+MAX_PUBLIC_RECEIPT_LAG_MS = 15000
+MAX_PUBLIC_CLOCK_LEAD_MS = 2000
 
 class Blocked(ValueError):
     pass
@@ -112,7 +114,7 @@ class MarketValidator:
         provider_ts=integer(frame.get("ts"), "PROVIDER_TS")
         # Public Bybit data is not retroactively first-seen simply because we
         # replayed it now: live session receipt must occur near event time.
-        if abs(received_ns // 1_000_000 - provider_ts) > 300_000:
+        if not -MAX_PUBLIC_CLOCK_LEAD_MS <= received_ns // 1_000_000 - provider_ts <= MAX_PUBLIC_RECEIPT_LAG_MS:
             raise Blocked("BLOCKED_PROVIDER_RECEIPT_CLOCK_DRIFT")
         if kind=="orderbook":
             data=frame.get("data")
@@ -121,7 +123,7 @@ class MarketValidator:
             u=integer(data.get("u"), "ORDERBOOK_UPDATE_ID")
             seq=integer(data.get("seq"), "ORDERBOOK_SEQUENCE")
             cts=integer(frame.get("cts"), "MATCHING_ENGINE_TIMESTAMP")
-            if cts > provider_ts + 5000 or abs(received_ns//1_000_000-cts)>300_000:
+            if cts > provider_ts + 5000 or not -MAX_PUBLIC_CLOCK_LEAD_MS <= received_ns//1_000_000-cts <= MAX_PUBLIC_RECEIPT_LAG_MS:
                 raise Blocked("BLOCKED_MATCHING_ENGINE_CLOCK")
             bids=pair_map(data.get("b"),allow_zero=True)
             asks=pair_map(data.get("a"),allow_zero=True)
@@ -165,7 +167,7 @@ class MarketValidator:
                 positive_decimal(event.get("v"))
                 positive_decimal(event.get("p"))
                 event_ts=integer(event.get("T"), "TRADE_MATCH_TIME")
-                if event_ts>provider_ts+5000 or abs(event_ts-provider_ts)>300_000:
+                if event_ts>provider_ts+5000 or not -MAX_PUBLIC_CLOCK_LEAD_MS <= provider_ts-event_ts <= MAX_PUBLIC_RECEIPT_LAG_MS:
                     raise Blocked("BLOCKED_TRADE_TIMESTAMP")
                 if event_ts<self.last_trade_ts.get(sym,0):
                     raise Blocked("BLOCKED_TRADE_CLOCK_REGRESSION")
