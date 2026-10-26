@@ -89,6 +89,15 @@ class Prove(unittest.TestCase):
             f=Path(d)/"events.jsonl";sample(f,mutate=("BTCUSDT","trade",wrong))
             with self.assertRaisesRegex(p.Blocked,"BLOCKED_PROVIDER_RECEIPT_CLOCK_DRIFT"):
                 p.verify_file(f)
+    def test_late_20s_receipt_blocks(self):
+        with tempfile.TemporaryDirectory() as d:
+            f=Path(d)/"events.jsonl"
+            writer=p.AppendChain(f)
+            writer.add(book("BTCUSDT"),(BASE_MS+20000)*1000000,1000000000000001)
+            writer.close()
+            with self.assertRaisesRegex(p.Blocked,"BLOCKED_PROVIDER_RECEIPT_CLOCK_DRIFT"):
+                p.verify_file(f)
+
     def test_max_seconds_fails_closed(self):
         with tempfile.TemporaryDirectory() as d:
             with self.assertRaisesRegex(p.Blocked,"BLOCKED_DURATION"):
