@@ -69,12 +69,12 @@ class RecoveryUnitTests(unittest.TestCase):
             name = ("sweep_private_drive_ack.json" if "/artifacts/2/" in url
                     else "sweep_public_summary.json")
             return archive(name, ack if name.startswith("sweep_private") else report)
-        entries = {runid: {"aggregate": {"id": 1}, "ack": {"id": 2}}}
+        entries = {runid: {"aggregate": [{"id": 1}], "ack": [{"id": 2}]}}
         with patch("tools.shadow_hour_recovery.fetch_bytes", side_effect=get):
             self.assertEqual(verified_hours(entries, "TOKEN", 498049, 498052),
                              ({498051}, set()))
             self.assertEqual(verified_hours(
-                {runid: {"aggregate": {"id": 1}}}, "TOKEN", 498049, 498052),
+                {runid: {"aggregate": [{"id": 1}]}}, "TOKEN", 498049, 498052),
                 (set(), {498051}))
             ack["sha256"] = "f" * 64
             with self.assertRaises(RecoveryBlocked):
@@ -82,9 +82,40 @@ class RecoveryUnitTests(unittest.TestCase):
 
     def test_orphan_ack_is_never_trusted_as_a_delivered_hour(self):
         with self.assertRaises(RecoveryBlocked):
-            verified_hours({"40265080154": {"ack": {"id": 2}}}, "TOKEN",
+            verified_hours({"40265080154": {"ack": [{"id": 2}]}}, "TOKEN",
                            498049, 498052)
 
+
+    def test_rerun_duplicate_artifact_names_preserve_only_sha_matched_receipt(self):
+        runid = "40187814133"
+        good_sha, unacknowledged_sha = "a" * 64, "b" * 64
+        def report(hour, sha):
+            return {
+                "schema": "AVRORA_PUBLIC_SHADOW_MULTIFAMILY_BATCH_V1",
+                "research_hour_index": hour, "run_id": runid,
+                "tested": 64, "real": "OFF", "holdout": "SEALED",
+                "oos": False, "maker_fill_proven": False,
+                "private_report_sha256": sha,
+            }
+        receipt = {
+            "schema": "AVRORA_PRIVATE_MULTIFAMILY_DRIVE_SHA_ACK_V1",
+            "run_id": runid, "status": "PRIVATE_DRIVE_BYTE_READBACK_VERIFIED",
+            "sha256": good_sha, "real": "OFF", "holdout": "SEALED",
+        }
+        blobs = {
+            "11": archive("sweep_public_summary.json", report(498030, good_sha)),
+            "12": archive("sweep_public_summary.json", report(498031, unacknowledged_sha)),
+            "13": archive("sweep_private_drive_ack.json", receipt),
+        }
+        def fake_get(url, token, limit=100000):
+            return blobs[url.split("/artifacts/")[1].split("/")[0]]
+        entries = {runid: {"aggregate": [{"id": 11}, {"id": 12}],
+                           "ack": [{"id": 13}]}}
+        with patch("tools.shadow_hour_recovery.fetch_bytes", side_effect=fake_get):
+            covered, partial = verified_hours(entries, "TOKEN", 498029, 498052)
+        self.assertEqual(covered, {498030})
+        self.assertEqual(partial, {498031})
+        self.assertNotEqual(select_hour(498031, covered, partial, lookback=1), 498030)
 
 if __name__ == "__main__":
     unittest.main()
