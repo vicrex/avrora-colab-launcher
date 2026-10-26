@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -24,6 +25,8 @@ START_HOUR = 497940
 LOOKBACK_HOURS = 24
 LIMIT_PAGES = 8
 MAX_ZIP_BYTES = 100_000
+MAX_FETCH_ATTEMPTS = 4
+RETRYABLE_HTTP = {500, 502, 503, 504}
 PREFIX_AGG = "avrora-multifamily-shadow-aggregate-"
 PREFIX_ACK = "avrora-multifamily-private-drive-ack-"
 SHA_RE = re.compile(r"^[a-f0-9]{64}$")
@@ -64,16 +67,25 @@ def fetch_bytes(url: str, token: str, limit: int = MAX_ZIP_BYTES) -> bytes:
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "avrora-shadow-catchup/1",
     })
-    try:
-        opener = urllib.request.build_opener(GitHubArtifactRedirect())
-        with opener.open(req, timeout=25) as resp:
-            data = resp.read(limit + 1)
-    except urllib.error.HTTPError as exc:
-        # Expose status and *numeric* artifact ID only: redirected signed
-        # URLs contain temporary credentials and MUST NOT enter public logs.
-        match = re.search(r"/artifacts/([0-9]+)/zip$", url)
-        label = "ZIP_" + match.group(1) if match else "LIST"
-        raise RecoveryBlocked(f"BLOCKED_RECOVERY_HTTP_{exc.code}_{label}") from None
+    opener = urllib.request.build_opener(GitHubArtifactRedirect())
+    for attempt in range(MAX_FETCH_ATTEMPTS):
+        try:
+            with opener.open(req, timeout=25) as resp:
+                data = resp.read(limit + 1)
+            break
+        except urllib.error.HTTPError as exc:
+            # GitHub artifact storage occasionally returns transient 5xx while
+            # an otherwise valid immutable ZIP is available. Retry only those
+            # provider failures; authorization, integrity and policy failures
+            # remain fail-closed on the first response.
+            if exc.code in RETRYABLE_HTTP and attempt + 1 < MAX_FETCH_ATTEMPTS:
+                time.sleep(0.5 * (2 ** attempt))
+                continue
+            # Expose status and *numeric* artifact ID only: redirected signed
+            # URLs contain temporary credentials and MUST NOT enter public logs.
+            match = re.search(r"/artifacts/([0-9]+)/zip$", url)
+            label = "ZIP_" + match.group(1) if match else "LIST"
+            raise RecoveryBlocked(f"BLOCKED_RECOVERY_HTTP_{exc.code}_{label}") from None
     if len(data) > limit:
         raise RecoveryBlocked("BLOCKED_RECOVERY_RESPONSE_TOO_LARGE")
     return data
