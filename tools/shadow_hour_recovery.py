@@ -96,9 +96,11 @@ def collect_artifacts(token: str, start_hour: int):
                 raise RecoveryBlocked("BLOCKED_RECOVERY_INVALID_RUN_ID")
             if obj.get("expired"):
                 raise RecoveryBlocked("BLOCKED_RECOVERY_EARLY_ARTIFACT_EXPIRY")
-            if typ in entries.setdefault(run_id, {}):
-                raise RecoveryBlocked("BLOCKED_RECOVERY_DUPLICATE_ARTIFACT_NAME")
-            entries[run_id][typ] = obj
+            group = entries.setdefault(run_id, {}).setdefault(typ, [])
+            # GitHub may retain several attempts under the same run_id/name.
+            # One receipt is authoritative ONLY for its matching report SHA.
+            if not any(item["id"] == obj["id"] for item in group):
+                group.append(obj)
         if len(items) < 100 or seen_old:
             break
     else:
@@ -107,43 +109,55 @@ def collect_artifacts(token: str, start_hour: int):
 
 
 def verified_hours(entries: dict, token: str, start_hour: int, current_hour: int):
-    """Pair authoritative SHA artifacts from the SAME run; partial means quarantine."""
+    """Pair individual attempt SHA receipts; quarantine unmatched retries."""
     covered, partial = set(), set()
     for run_id, artifacts in entries.items():
-        agg = artifacts.get("aggregate")
-        if agg is None:
+        aggregates = artifacts.get("aggregate", [])
+        acknowledgements = artifacts.get("ack", [])
+        if not aggregates:
             raise RecoveryBlocked("BLOCKED_RECOVERY_ORPHAN_ACK")
-        url = f"{API}/artifacts/{agg['id']}/zip"
-        report = read_archive(fetch_bytes(url, token), "sweep_public_summary.json", agg.get("digest"))
-        hour = report.get("research_hour_index")
-        if (not isinstance(hour, int) or isinstance(hour, bool)
-                or hour < START_HOUR or hour > current_hour
-                or report.get("schema") != "AVRORA_PUBLIC_SHADOW_MULTIFAMILY_BATCH_V1"
-                or str(report.get("run_id")) != run_id or report.get("tested") != 64
-                or report.get("real") != "OFF" or report.get("holdout") != "SEALED"
-                or report.get("oos") is not False
-                or report.get("maker_fill_proven") is not False
-                or not isinstance(report.get("private_report_sha256"), str)
-                or not SHA_RE.fullmatch(report["private_report_sha256"])):
-            raise RecoveryBlocked("BLOCKED_RECOVERY_BAD_AGGREGATE")
-        if hour < start_hour:
-            continue
-        ack = artifacts.get("ack")
-        if ack is None:
-            partial.add(hour)
-            continue
-        receipt = read_archive(fetch_bytes(
-            f"{API}/artifacts/{ack['id']}/zip", token),
-            "sweep_private_drive_ack.json", ack.get("digest"))
-        if (receipt.get("schema") != "AVRORA_PRIVATE_MULTIFAMILY_DRIVE_SHA_ACK_V1"
-                or str(receipt.get("run_id")) != run_id
-                or receipt.get("status") != "PRIVATE_DRIVE_BYTE_READBACK_VERIFIED"
-                or receipt.get("sha256") != report["private_report_sha256"]
-                or receipt.get("real") != "OFF" or receipt.get("holdout") != "SEALED"):
-            raise RecoveryBlocked("BLOCKED_RECOVERY_BAD_DRIVE_ACK")
-        covered.add(hour)
+        reports = []
+        for aggregate in aggregates:
+            report = read_archive(
+                fetch_bytes(f"{API}/artifacts/{aggregate['id']}/zip", token),
+                "sweep_public_summary.json", aggregate.get("digest"))
+            hour = report.get("research_hour_index")
+            digest = report.get("private_report_sha256")
+            if (not isinstance(hour, int) or isinstance(hour, bool)
+                    or hour < START_HOUR or hour > current_hour
+                    or report.get("schema") != "AVRORA_PUBLIC_SHADOW_MULTIFAMILY_BATCH_V1"
+                    or str(report.get("run_id")) != run_id or report.get("tested") != 64
+                    or report.get("real") != "OFF" or report.get("holdout") != "SEALED"
+                    or report.get("oos") is not False
+                    or report.get("maker_fill_proven") is not False
+                    or not isinstance(digest, str) or not SHA_RE.fullmatch(digest)):
+                raise RecoveryBlocked("BLOCKED_RECOVERY_BAD_AGGREGATE")
+            if hour >= start_hour:
+                reports.append((hour, digest))
+        ack_hashes = []
+        for ack in acknowledgements:
+            receipt = read_archive(
+                fetch_bytes(f"{API}/artifacts/{ack['id']}/zip", token),
+                "sweep_private_drive_ack.json", ack.get("digest"))
+            sha = receipt.get("sha256")
+            if (receipt.get("schema") != "AVRORA_PRIVATE_MULTIFAMILY_DRIVE_SHA_ACK_V1"
+                    or str(receipt.get("run_id")) != run_id
+                    or receipt.get("status") != "PRIVATE_DRIVE_BYTE_READBACK_VERIFIED"
+                    or not isinstance(sha, str) or not SHA_RE.fullmatch(sha)
+                    or receipt.get("real") != "OFF" or receipt.get("holdout") != "SEALED"):
+                raise RecoveryBlocked("BLOCKED_RECOVERY_BAD_DRIVE_ACK")
+            ack_hashes.append(sha)
+        for hour, digest in reports:
+            if digest in ack_hashes:
+                covered.add(hour)
+            else:
+                partial.add(hour)
+        # The ack must match an aggregate, even when historical attempts repeat.
+        # If the aggregate predates the lookback it may have been excluded by
+        # the created_at cutoff; that case must not turn into a fake success.
+        if any(sha not in [digest for _, digest in reports] for sha in ack_hashes):
+            raise RecoveryBlocked("BLOCKED_RECOVERY_ORPHAN_ACK_HASH")
     return covered, partial
-
 
 def select_hour(current_hour: int, covered: set[int], partial: set[int], lookback: int = LOOKBACK_HOURS):
     if current_hour < START_HOUR:
