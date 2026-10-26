@@ -1,0 +1,41 @@
+name: AVRORA shadow recovery read-only PR tests
+
+on:
+  push:
+    branches:
+      - fix/gas-hour-catchup-idempotent-20261026
+    paths:
+      - 'tools/shadow_hour_recovery.py'
+      - 'tests/test_shadow_hour_recovery.py'
+      - '.github/workflows/shadow-recovery-offline.yml'
+  pull_request:
+    paths:
+      - 'tools/shadow_hour_recovery.py'
+      - 'tests/test_shadow_hour_recovery.py'
+      - 'tests/test_gas_shadow_fallback_route.py'
+      - '.github/workflows/multifamily-sweep-smoke.yml'
+      - '.github/workflows/avrora-private-wave.yml'
+      - '.github/workflows/colab-launcher.yml'
+      - '.github/workflows/shadow-recovery-offline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  fail-closed-offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate recovery and existing GAS route (no secrets or market calls)
+        run: |
+          set -euo pipefail
+          python -m py_compile tools/shadow_hour_recovery.py
+          python -m unittest discover -s tests -p 'test_shadow_hour_recovery.py' -v
+          python -m unittest discover -s tests -p 'test_gas_shadow_fallback_route.py' -v

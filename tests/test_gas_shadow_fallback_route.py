@@ -24,16 +24,15 @@ class GasFallbackRoutingTests(unittest.TestCase):
         self.assertIn("secrets: inherit", fallback)
         self.assertNotIn("cron:", fallback)
 
-    def test_schedule_keeps_single_opt_in_emergency_shadow_path(self):
+    def test_schedule_reconciles_gas_using_one_existing_cron(self):
         launcher = PUBLIC_LAUNCHER.read_text(encoding="utf-8")
         private_wave = PRIVATE_WAVE.read_text(encoding="utf-8")
         self.assertEqual(launcher.count('cron: "7 * * * *"'), 1)
         self.assertEqual(launcher.count("  multifamily-shadow-scheduled:\n"), 1)
-        self.assertIn(
-            "github.event_name == 'schedule' && "
-            "vars.AVRORA_NATIVE_MULTIFAMILY_FALLBACK_ENABLED == 'true'",
-            launcher,
-        )
+        self.assertIn("if: ${{ github.event_name == 'schedule' }}", launcher)
+        self.assertNotIn("AVRORA_NATIVE_MULTIFAMILY_FALLBACK_ENABLED", launcher)
+        self.assertIn("actions: read", launcher)
+        self.assertIn("actions: read", private_wave)
         self.assertIn("uses: ./.github/workflows/multifamily-sweep-smoke.yml", launcher)
         self.assertNotIn("  schedule:", private_wave)
         self.assertNotIn("  repository_dispatch:", private_wave)
@@ -46,6 +45,9 @@ class GasFallbackRoutingTests(unittest.TestCase):
         self.assertIn("ref: 90c3d85a8234d2b640f772be25dd88fd0f547acc", sweep)
         self.assertIn("ref: 3352275492bf192dd4c6d7abfcf9bbaae19ac983", sweep)
         self.assertIn("NOT_INDEPENDENTLY_RECONSTRUCTED", sweep)
+        self.assertIn("id: recovery", sweep)
+        self.assertIn("steps.recovery.outputs.status == 'RUN'", sweep)
+        self.assertIn("python -m tools.shadow_hour_recovery", sweep)
 
 
 if __name__ == "__main__":

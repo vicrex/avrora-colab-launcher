@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: avrora-private-multifamily-smoke
@@ -39,7 +40,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Resolve missing UTC hour from paired public aggregate and private Drive ACK
+        id: recovery
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m tools.shadow_hour_recovery
       - name: Checkout immutable PRIVATE AVRORA research engine
+        if: ${{ steps.recovery.outputs.status == 'RUN' }}
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
@@ -50,6 +57,7 @@ jobs:
           ssh-strict: true
           ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
       - name: Checkout immutable PRIVATE P816 discovery data
+        if: ${{ steps.recovery.outputs.status == 'RUN' }}
         uses: actions/checkout@v4
         with:
           repository: vicrex/avrora-wave-source
@@ -60,9 +68,11 @@ jobs:
           ssh-strict: true
           ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
       - uses: actions/setup-python@v5
+        if: ${{ steps.recovery.outputs.status == 'RUN' }}
         with:
           python-version: '3.12'
       - name: Verify frozen private source commits and offline proposal safety
+        if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
           set -euo pipefail
           test "$(git -C private_code rev-parse HEAD)" = "$PRIVATE_CODE_SHA"
@@ -75,6 +85,7 @@ jobs:
           }
           echo 'PASS_PRIVATE_MULTIFAMILY_PROPOSAL_AND_SAFETY_TESTS'
       - name: Independently verify P816 byte lineage, complete OHLC grid and synchronized six-asset warmup
+        if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
           set -euo pipefail
           cd private_code
@@ -105,16 +116,18 @@ jobs:
                 'AUDIT_SHA',obj['audit_sha256'])
           PY
       - name: Freeze this run's UTC hour as deterministic sweep batch
+        if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
           set -euo pipefail
-          hour=$(( $(date -u +%s) / 3600 ))
-          if [[ "$hour" -lt 497940 ]]; then
+          hour="${{ steps.recovery.outputs.hour }}"
+          if [[ ! "$hour" =~ ^[0-9]+$ || "$hour" -lt 497940 ]]; then
             echo "BLOCKED_SWEEP_BEFORE_FROZEN_SCHEDULE"
             exit 2
           fi
           echo "RESEARCH_UTC_HOUR=$hour" >> "$GITHUB_ENV"
           echo "SWEEP_HOUR_$hour"
       - name: Evaluate 64 REAL P816 discovery-sample cases via private engine
+        if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
           set -euo pipefail
           cd private_code
@@ -128,6 +141,7 @@ jobs:
           fi
           echo 'PASS_REAL_P816_DISCOVERY_SHADOW_SWEEP_NO_MAKER_FILL'
       - name: Publish aggregate safety receipt only (no private hypotheses)
+        if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -178,7 +192,7 @@ jobs:
                 receipt['private_report_sha256'])
           PY
       - name: Publish public non-sensitive aggregate only
-        if: ${{ success() }}
+        if: ${{ success() && steps.recovery.outputs.status == 'RUN' }}
         uses: actions/upload-artifact@v4
         with:
           name: avrora-multifamily-shadow-aggregate-${{ github.run_id }}
@@ -186,6 +200,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Deliver full private ledger to Drive via FREE owner GAS, or separately approved Drive OAuth
+        if: ${{ steps.recovery.outputs.status == 'RUN' }}
         env:
           AVRORA_GAS_REPORT_WEBAPP_URL: ${{ secrets.AVRORA_GAS_REPORT_WEBAPP_URL }}
           AVRORA_GAS_REPORT_HMAC_KEY: ${{ secrets.AVRORA_GAS_REPORT_HMAC_KEY }}
@@ -212,7 +227,7 @@ jobs:
             exit 8
           fi
       - name: Publish only the safe SHA delivery ACK (never private models)
-        if: ${{ success() }}
+        if: ${{ success() && steps.recovery.outputs.status == 'RUN' }}
         uses: actions/upload-artifact@v4
         with:
           name: avrora-multifamily-private-drive-ack-${{ github.run_id }}
