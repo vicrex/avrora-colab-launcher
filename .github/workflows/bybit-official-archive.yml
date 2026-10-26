@@ -26,32 +26,29 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Select deterministic 7-day rolling publication/backfill window
+      - name: Select only eligible completed source days (rolling up to seven)
         id: day
         shell: bash
         run: |
           set -euo pipefail
-          # Same SIX jobs/hour, never 6x7=42. Rotate 1..7 days back:
-          # delayed archives and missed GitHub schedule hours are retried.
-          hour="$(date -u +%-H)"
-          lag="$((hour % 7 + 1))"
-          echo "lag=$lag" >> "$GITHUB_OUTPUT"
-          echo "day=$(date -u -d "$lag days ago" +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-          echo "OFFICIAL_ARCHIVE_BACKFILL_LAG_DAYS_$lag"
+          # Same SIX jobs/hour, no new clock or extra matrix jobs.
+          # During startup, do NOT spend six jobs on unsupported pre-freeze days.
+          python -m tools.bybit_archive_day_selector >> "$GITHUB_OUTPUT"
       - name: Skip when THIS symbol/day already has a successful GitHub artifact
+        if: ${{ steps.day.outputs.status == 'READY_EXISTING_SIX_JOBS' }}
         id: cached
         uses: actions/cache/restore@v4
         with:
           path: .avrora_archive_captured/${{ matrix.symbol }}/${{ steps.day.outputs.day }}.txt
           key: bybit-official-six-v2-${{ matrix.symbol }}-${{ steps.day.outputs.day }}
       - name: Verify transport and six-symbol safety without external requests
-        if: ${{ steps.cached.outputs.cache-hit != 'true' }}
+        if: ${{ steps.day.outputs.status == 'READY_EXISTING_SIX_JOBS' && steps.cached.outputs.cache-hit != 'true' }}
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_bybit_official_archive_transport.py' -v
           python -m unittest discover -s tests -p 'test_bybit_six_symbol_archive.py' -v
       - name: Download exact allowlisted official source or WAIT for publication
-        if: ${{ steps.cached.outputs.cache-hit != 'true' }}
+        if: ${{ steps.day.outputs.status == 'READY_EXISTING_SIX_JOBS' && steps.cached.outputs.cache-hit != 'true' }}
         id: archive
         shell: bash
         env:
