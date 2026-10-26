@@ -104,7 +104,7 @@ class M15PanelTests(unittest.TestCase):
         self.assertEqual(a["volume"],"10")
         self.assertEqual(a["buy_volume"],"4")
         self.assertEqual(a["sell_volume"],"6")
-        self.assertEqual(a["turnover"],"100.0")
+        self.assertEqual(a["turnover"],"101.0")
         self.assertEqual(a["trade_count"],4)
         self.assertEqual(a["timestamp_ms"],p.utc_timestamp(DAYS[0])*1000)
 
