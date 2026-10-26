@@ -135,6 +135,34 @@ class RecoveryUnitTests(unittest.TestCase):
             handler.redirect_request(req, None, 302, "Found", {},
                                      "http://127.0.0.1/archive.zip")
 
+    def test_retries_transient_server_error_then_succeeds(self):
+        target = API + "/artifacts/12345/zip"
+        raw = b"immutable-zip-bytes"
+
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self, limit):
+                return raw
+
+        class FlakyOpener:
+            calls = 0
+            def open(self, *args, **kwargs):
+                self.calls += 1
+                if self.calls < 3:
+                    raise urllib.error.HTTPError(target, 503, "Unavailable", {}, None)
+                return Response()
+
+        opener = FlakyOpener()
+        with patch("tools.shadow_hour_recovery.urllib.request.build_opener",
+                   return_value=opener), patch(
+                       "tools.shadow_hour_recovery.time.sleep") as sleep:
+            self.assertEqual(fetch_bytes(target, "TOKEN"), raw)
+        self.assertEqual(opener.calls, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [0.5, 1.0])
+
     def test_http_error_prints_only_safe_numeric_artifact_id(self):
         target = API + "/artifacts/12345/zip"
         err = urllib.error.HTTPError(
