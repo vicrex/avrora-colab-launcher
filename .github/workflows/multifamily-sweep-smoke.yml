@@ -40,6 +40,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+      # Attempt-aware: different GitHub artifact IDs may share a run_id/name.
+      # Select only reports whose exact private SHA is confirmed by Drive ACK.
       - name: Resolve missing UTC hour from paired public aggregate and private Drive ACK
         id: recovery
         env:
