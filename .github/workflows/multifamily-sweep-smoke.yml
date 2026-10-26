@@ -143,6 +143,17 @@ jobs:
             exit 4
           fi
           echo 'PASS_REAL_P816_DISCOVERY_SHADOW_SWEEP_NO_MAKER_FILL'
+      # Calculate PRIVATE 48D vectors for all 64 results before the existing
+      # report delivery. Never upload these vectors to public GitHub artifacts.
+      # The original verified full report remains the durable Drive source.
+      - name: Stage all 64 private strategy results into vector evidence (no public rows)
+        if: ${{ steps.recovery.outputs.status == 'RUN' }}
+        run: |
+          set -euo pipefail
+          python -m tools.strategy_vector48 \
+            --input sweep_private_full.json \
+            --output sweep_private_vector48.json
+          test -s sweep_private_vector48.json
       - name: Publish aggregate safety receipt only (no private hypotheses)
         if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
@@ -241,4 +252,5 @@ jobs:
         if: ${{ always() }}
         run: |
           rm -rf "$GITHUB_WORKSPACE/private_code" "$GITHUB_WORKSPACE/private_source"
+          rm -f "$GITHUB_WORKSPACE/sweep_private_vector48.json"
           rm -f "$GITHUB_WORKSPACE/sweep_private_full.json" "$GITHUB_WORKSPACE/sweep_private_drive_ack.json" "$RUNNER_TEMP/sweep_run.log" "$RUNNER_TEMP/sweep_unittests.log" "$GITHUB_WORKSPACE/p816_panel_audit_private.json" "$RUNNER_TEMP/p816_audit_unit.log" "$RUNNER_TEMP/p816_audit_run.log"
