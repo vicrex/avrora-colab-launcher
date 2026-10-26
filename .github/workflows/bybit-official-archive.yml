@@ -42,13 +42,13 @@ jobs:
           path: .avrora_archive_captured/${{ matrix.symbol }}/${{ steps.day.outputs.day }}.txt
           key: bybit-official-six-v2-${{ matrix.symbol }}-${{ steps.day.outputs.day }}
       - name: Verify transport and six-symbol safety without external requests
-        if: ${{ steps.cached.outputs.cache-hit != 'true' }}
+        if: ${{ steps.day.outputs.status == 'READY_EXISTING_SIX_JOBS' && steps.cached.outputs.cache-hit != 'true' }}
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_bybit_official_archive_transport.py' -v
           python -m unittest discover -s tests -p 'test_bybit_six_symbol_archive.py' -v
       - name: Download exact allowlisted official source or WAIT for publication
-        if: ${{ steps.cached.outputs.cache-hit != 'true' }}
+        if: ${{ steps.day.outputs.status == 'READY_EXISTING_SIX_JOBS' && steps.cached.outputs.cache-hit != 'true' }}
         id: archive
         shell: bash
         env:
