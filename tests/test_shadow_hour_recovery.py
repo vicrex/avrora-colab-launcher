@@ -4,9 +4,11 @@ import io
 import json
 import unittest
 import zipfile
+import urllib.error
+import urllib.request
 from unittest.mock import patch
 
-from tools.shadow_hour_recovery import RecoveryBlocked, read_archive, select_hour, verified_hours
+from tools.shadow_hour_recovery import RecoveryBlocked, read_archive, select_hour, verified_hours, GitHubArtifactRedirect, fetch_bytes, API
 
 
 def archive(name, obj):
@@ -116,6 +118,36 @@ class RecoveryUnitTests(unittest.TestCase):
         self.assertEqual(covered, {498030})
         self.assertEqual(partial, {498031})
         self.assertNotEqual(select_hour(498031, covered, partial, lookback=1), 498030)
+
+    def test_storage_redirect_strips_bearer_and_blocks_untrusted_hosts(self):
+        handler = GitHubArtifactRedirect()
+        req = urllib.request.Request(
+            API + "/artifacts/123/zip", headers={
+                "Authorization": "Bearer SECRET",
+                "X-GitHub-Api-Version": "2022-11-28",
+            })
+        redir = handler.redirect_request(
+            req, None, 302, "Found", {},
+            "https://results.actions.githubusercontent.com/archive.zip?signature=private")
+        self.assertNotIn("Authorization", redir.headers)
+        self.assertNotIn("Authorization", redir.unredirected_hdrs)
+        with self.assertRaises(RecoveryBlocked):
+            handler.redirect_request(req, None, 302, "Found", {},
+                                     "http://127.0.0.1/archive.zip")
+
+    def test_http_error_prints_only_safe_numeric_artifact_id(self):
+        target = API + "/artifacts/12345/zip"
+        err = urllib.error.HTTPError(
+            target, 403, "Forbidden", {}, None)
+        class BadOpener:
+            def open(self, *args, **kwargs):
+                raise err
+        with patch("tools.shadow_hour_recovery.urllib.request.build_opener",
+                   return_value=BadOpener()):
+            with self.assertRaises(RecoveryBlocked) as cm:
+                fetch_bytes(target, "Bearer-SUPER-SECRET")
+        self.assertIn("HTTP_403_ZIP_12345", str(cm.exception))
+        self.assertNotIn("SUPER-SECRET", str(cm.exception))
 
 if __name__ == "__main__":
     unittest.main()
