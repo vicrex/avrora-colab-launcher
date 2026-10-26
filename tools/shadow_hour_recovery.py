@@ -12,7 +12,9 @@ import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 import zipfile
 from datetime import datetime, timezone
 
@@ -32,6 +34,27 @@ class RecoveryBlocked(ValueError):
     pass
 
 
+class GitHubArtifactRedirect(urllib.request.HTTPRedirectHandler):
+    """Allow HTTPS artifact storage redirects but never forward the API bearer."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        src, dst = urlsplit(req.full_url), urlsplit(newurl)
+        host = (dst.hostname or "").lower()
+        trusted_storage = (
+            host == "api.github.com" or host == "github.com"
+            or host.endswith(".githubusercontent.com")
+            or host.endswith(".blob.core.windows.net")
+        )
+        if (dst.scheme != "https" or not trusted_storage
+                or dst.username or dst.password or dst.port not in (None, 443)):
+            raise RecoveryBlocked("BLOCKED_RECOVERY_UNTRUSTED_STORAGE_REDIRECT")
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and host != (src.hostname or "").lower():
+            for key in ("Authorization", "X-GitHub-Api-Version"):
+                redirected.remove_header(key)
+        return redirected
+
+
 def fetch_bytes(url: str, token: str, limit: int = MAX_ZIP_BYTES) -> bytes:
     if not url.startswith(API + "/") and url != API + "/artifacts":
         raise RecoveryBlocked("BLOCKED_RECOVERY_UNEXPECTED_API_URL")
@@ -41,12 +64,19 @@ def fetch_bytes(url: str, token: str, limit: int = MAX_ZIP_BYTES) -> bytes:
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "avrora-shadow-catchup/1",
     })
-    with urllib.request.urlopen(req, timeout=25) as resp:
-        data = resp.read(limit + 1)
+    try:
+        opener = urllib.request.build_opener(GitHubArtifactRedirect())
+        with opener.open(req, timeout=25) as resp:
+            data = resp.read(limit + 1)
+    except urllib.error.HTTPError as exc:
+        # Expose status and *numeric* artifact ID only: redirected signed
+        # URLs contain temporary credentials and MUST NOT enter public logs.
+        match = re.search(r"/artifacts/(\\d+)/zip$", url)
+        label = "ZIP_" + match.group(1) if match else "LIST"
+        raise RecoveryBlocked(f"BLOCKED_RECOVERY_HTTP_{exc.code}_{label}") from None
     if len(data) > limit:
         raise RecoveryBlocked("BLOCKED_RECOVERY_RESPONSE_TOO_LARGE")
     return data
-
 
 def read_archive(raw: bytes, expected: str, digest: str | None) -> dict:
     if digest:
