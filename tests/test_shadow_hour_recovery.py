@@ -4,8 +4,9 @@ import io
 import json
 import unittest
 import zipfile
+from unittest.mock import patch
 
-from tools.shadow_hour_recovery import RecoveryBlocked, read_archive, select_hour
+from tools.shadow_hour_recovery import RecoveryBlocked, read_archive, select_hour, verified_hours
 
 
 def archive(name, obj):
@@ -47,6 +48,42 @@ class RecoveryUnitTests(unittest.TestCase):
         with self.assertRaises(RecoveryBlocked):
             read_archive(archive("sweep_public_summary.json", {"pad": "X" * 16000}),
                          "sweep_public_summary.json", None)
+
+
+    def test_actual_matching_aggregate_and_drive_ack_are_required(self):
+        runid = "40265080154"
+        sha = "c" * 64
+        report = {
+            "schema": "AVRORA_PUBLIC_SHADOW_MULTIFAMILY_BATCH_V1",
+            "research_hour_index": 498051, "run_id": runid,
+            "tested": 64, "real": "OFF", "holdout": "SEALED",
+            "oos": False, "maker_fill_proven": False,
+            "private_report_sha256": sha,
+        }
+        ack = {
+            "schema": "AVRORA_PRIVATE_MULTIFAMILY_DRIVE_SHA_ACK_V1",
+            "run_id": runid, "status": "PRIVATE_DRIVE_BYTE_READBACK_VERIFIED",
+            "sha256": sha, "real": "OFF", "holdout": "SEALED",
+        }
+        def get(url, token, limit=100000):
+            name = ("sweep_private_drive_ack.json" if "/artifacts/2/" in url
+                    else "sweep_public_summary.json")
+            return archive(name, ack if name.startswith("sweep_private") else report)
+        entries = {runid: {"aggregate": {"id": 1}, "ack": {"id": 2}}}
+        with patch("tools.shadow_hour_recovery.fetch_bytes", side_effect=get):
+            self.assertEqual(verified_hours(entries, "TOKEN", 498049, 498052),
+                             ({498051}, set()))
+            self.assertEqual(verified_hours(
+                {runid: {"aggregate": {"id": 1}}}, "TOKEN", 498049, 498052),
+                (set(), {498051}))
+            ack["sha256"] = "f" * 64
+            with self.assertRaises(RecoveryBlocked):
+                verified_hours(entries, "TOKEN", 498049, 498052)
+
+    def test_orphan_ack_is_never_trusted_as_a_delivered_hour(self):
+        with self.assertRaises(RecoveryBlocked):
+            verified_hours({"40265080154": {"ack": {"id": 2}}}, "TOKEN",
+                           498049, 498052)
 
 
 if __name__ == "__main__":
