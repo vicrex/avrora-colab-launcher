@@ -26,9 +26,13 @@ on:
       - 'tests/test_bybit_six_symbol_archive.py'
       - 'tools/forward_m15_transport.py'
       - 'tests/test_forward_m15_transport.py'
+      - 'tools/shadow_hour_recovery.py'
+      - 'tests/test_shadow_hour_recovery.py'
+      - '.github/workflows/multifamily-sweep-smoke.yml'
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: avrora-colab-public-launcher
