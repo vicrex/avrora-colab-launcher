@@ -39,11 +39,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Emergency fallback only. GAS workflow_dispatch is the authoritative hourly
-  # multifamily route; keeping the native cron opt-in prevents duplicate hour/SHA
-  # writes when GitHub's delayed schedule overlaps an already completed GAS run.
+  # Reconciled fallback on the EXISTING hourly cron (no new timer).
+  # The sweep validates the public aggregate + private Drive ACK for each hour.
+  # Missing or malformed proofs fail closed; GAS-completed hours are not repeated.
   multifamily-shadow-scheduled:
-    if: ${{ github.event_name == 'schedule' && vars.AVRORA_NATIVE_MULTIFAMILY_FALLBACK_ENABLED == 'true' }}
+    if: ${{ github.event_name == 'schedule' }}
     uses: ./.github/workflows/multifamily-sweep-smoke.yml
     secrets: inherit
 
