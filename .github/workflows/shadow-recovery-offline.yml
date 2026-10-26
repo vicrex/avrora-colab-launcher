@@ -1,6 +1,13 @@
 name: AVRORA shadow recovery read-only PR tests
 
 on:
+  push:
+    branches:
+      - fix/gas-hour-catchup-idempotent-20261026
+    paths:
+      - 'tools/shadow_hour_recovery.py'
+      - 'tests/test_shadow_hour_recovery.py'
+      - '.github/workflows/shadow-recovery-offline.yml'
   pull_request:
     paths:
       - 'tools/shadow_hour_recovery.py'
