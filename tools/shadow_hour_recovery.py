@@ -132,8 +132,7 @@ def verified_hours(entries: dict, token: str, start_hour: int, current_hour: int
                     or report.get("maker_fill_proven") is not False
                     or not isinstance(digest, str) or not SHA_RE.fullmatch(digest)):
                 raise RecoveryBlocked("BLOCKED_RECOVERY_BAD_AGGREGATE")
-            if hour >= start_hour:
-                reports.append((hour, digest))
+            reports.append((hour, digest))
         ack_hashes = []
         for ack in acknowledgements:
             receipt = read_archive(
@@ -148,6 +147,8 @@ def verified_hours(entries: dict, token: str, start_hour: int, current_hour: int
                 raise RecoveryBlocked("BLOCKED_RECOVERY_BAD_DRIVE_ACK")
             ack_hashes.append(sha)
         for hour, digest in reports:
+            if hour < start_hour:
+                continue
             if digest in ack_hashes:
                 covered.add(hour)
             else:
