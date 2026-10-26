@@ -71,7 +71,7 @@ def fetch_bytes(url: str, token: str, limit: int = MAX_ZIP_BYTES) -> bytes:
     except urllib.error.HTTPError as exc:
         # Expose status and *numeric* artifact ID only: redirected signed
         # URLs contain temporary credentials and MUST NOT enter public logs.
-        match = re.search(r"/artifacts/(\\d+)/zip$", url)
+        match = re.search(r"/artifacts/([0-9]+)/zip$", url)
         label = "ZIP_" + match.group(1) if match else "LIST"
         raise RecoveryBlocked(f"BLOCKED_RECOVERY_HTTP_{exc.code}_{label}") from None
     if len(data) > limit:
