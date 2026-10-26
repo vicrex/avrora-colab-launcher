@@ -8,7 +8,7 @@
 
 ## Прямой результат 26 октября
 
-- 12 офлайн unit-тестов: PASS.
+- 13 офлайн unit-тестов: PASS.
 - Проверены непрерывная SHA256-цепочка, сохранённые timestamps, snapshot → delta, monotonic `seq` / `u`, шестёрка инструментов, знаки встречных сделок, цена / размер, нарушения в источнике и контроль отсутствующих каналов.
 - Пробный 2-секундный запуск от текущей среды: **BLOCKED_CAPTURE, DNS**, 0 записанных событий. Сохранён `probe/manifest.json`. Прямой read-only Bybit REST из доступного web-окружения: HTTP 403. Поэтому **нет доказанного успешного сетевого live-запуска**.
 - Исторический набор за 23–25 октября и независимый price-path моделируемый результат для 192 кандидатов не считаются prospective OOS или proof maker fill.
@@ -20,9 +20,9 @@
 
 ```powershell
 python -m pip install "websockets==16.0"
-python avrora_forward_l2_provenance.py capture --output "E:\AVRORA_L2_EVIDENCE\run_001" --seconds 60
-python avrora_forward_l2_provenance.py verify --events "E:\AVRORA_L2_EVIDENCE\run_001\events.jsonl" --output "E:\AVRORA_L2_EVIDENCE\run_001\independent_qc.json"
-python -m unittest -v test_avrora_forward_l2_provenance.py
+python -m tools.forward_l2_provenance capture --output "E:\AVRORA_L2_EVIDENCE\run_001" --seconds 60
+python -m tools.forward_l2_provenance verify --events "E:\AVRORA_L2_EVIDENCE\run_001\events.jsonl" --output "E:\AVRORA_L2_EVIDENCE\run_001\independent_qc.json"
+python -m unittest discover -s tests -p test_forward_l2_provenance.py -v
 ```
 
 Код не использует прокси и не меняет страну подключения. Если у провайдера ограничение IP/юрисдикции, нужно **допустимое подключение**, а не обход ограничения. Этот 60-секундный сеанс — краткая проверка канала, **не полноценная 15-минутная история и не исполнение ордера**. Скрипт ограничен максимум 300 секундами и 80 МБ данных на сеанс, обрывает невалидные данные.
