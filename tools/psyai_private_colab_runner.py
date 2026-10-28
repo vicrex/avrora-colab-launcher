@@ -45,7 +45,10 @@ def source_archive():
     node_tests = sorted(SOURCE.glob("tests/test_*.cjs"))
     if not node_tests:
         raise ValueError("NODE_SUITE_MISSING")
-    for script in node_tests:
+    # Parse every actual UI script, too; a broken browser asset can be
+    # missed by a test that does not import that specific script.
+    node_scripts = node_tests + sorted(SOURCE.glob("static/*.js"))
+    for script in node_scripts:
         try:
             check = subprocess.run(["node", "--check", str(script)],
                 check=False, stdout=subprocess.DEVNULL,
