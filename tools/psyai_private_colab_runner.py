@@ -63,8 +63,8 @@ def source_archive():
     if not atlas_test.is_file():
         raise ValueError("NODE_ATLAS_TEST_MISSING")
     try:
-        atlas = subprocess.run(["node", "--test", str(atlas_test)],
-            cwd=SOURCE, check=False, stdout=subprocess.DEVNULL,
+        atlas = subprocess.run(["node", "--test", str(atlas_test.resolve())],
+            check=False, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         raise ValueError("NODE_ATLAS_PREFLIGHT_UNAVAILABLE") from None
