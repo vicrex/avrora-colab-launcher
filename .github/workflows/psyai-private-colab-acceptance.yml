@@ -55,18 +55,19 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          import json,os,pathlib
+          import hashlib,json,os,pathlib
           source=os.getenv('SOURCE_ACCESS_PRESENT')=='true'
           colab=os.getenv('EXISTING_COLAB_ADC_PRESENT')=='true'
           if source and colab:
               print('PRIVATE_SOURCE_AND_EXISTING_ADC_READY')
           else:
               reason='BLOCKED_PRIVATE_SOURCE_READER_NOT_CONFIGURED' if not source else 'BLOCKED_EXISTING_COLAB_ADC_NOT_CONFIGURED'
-              pathlib.Path('psyai-private-colab-proof.json').write_text(
-                  json.dumps({'schema':'PSYAI_PRIVATE_COLAB_PREWINDOWS_V1',
-                              'status':'BLOCKED','reason':reason,
-                              'source_loaded':False,'model_e2e':False,
-                              'windows_e2e':False,'full_tz_accepted':False})+'\n')
+              proof={'schema':'PSYAI_PRIVATE_COLAB_PREWINDOWS_V1',
+                     'status':'BLOCKED','reason':reason,'source_loaded':False,
+                     'model_e2e':False,'windows_e2e':False,'full_tz_accepted':False}
+              canonical=json.dumps(proof,sort_keys=True,separators=(',',':'),ensure_ascii=True)
+              proof['receipt_sha256']=hashlib.sha256(canonical.encode('ascii')).hexdigest()
+              pathlib.Path('psyai-private-colab-proof.json').write_text(json.dumps(proof)+'\n')
               print(reason)
           PY
       - name: Checkout PRIVATE PsyAI branch using isolated read-only source key
