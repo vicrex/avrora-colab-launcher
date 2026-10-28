@@ -127,6 +127,7 @@ try:
                 try:
                     testsuite=ET.parse(xml).getroot()
                     module_failures=collections.Counter()
+                    test_failures=collections.Counter()
                     errors=collections.Counter()
                     testcase_count=0
                     for case in testsuite.iter("testcase"):
@@ -144,6 +145,10 @@ try:
                         safe_parts=re.findall(r"(?:^|[./])(?P<mod>test_[a-zA-Z0-9_]{1,90})(?=\.|/|$)",raw)
                         name=safe_parts[0] if safe_parts else "UNKNOWN_TEST_MODULE"
                         module_failures[(name,kind)]+=1
+                        # Pytest parameter values must never enter a public report.
+                        function=case.attrib.get("name","").split("[",1)[0]
+                        if re.fullmatch(r"test_[a-zA-Z0-9_]{1,90}",function):
+                            test_failures[(name,function,kind)]+=1
                         category=problem.attrib.get("type","")
                         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,70}",category):
                             # Pytest normally puts exception class in the message
@@ -162,6 +167,9 @@ try:
                     r["python_failure_modules"]=[{"module":mod,"kind":kind,"count":n}
                         for (mod,kind),n in sorted(module_failures.items(),
                             key=lambda x:(-x[1],x[0]))[:60]]
+                    r["python_failed_tests"]=[{"module":mod,"test":fn,"kind":kind,"count":n}
+                        for (mod,fn,kind),n in sorted(test_failures.items(),
+                            key=lambda x:(-x[1],x[0]))[:130]]
                     r["python_error_types"]=[{"type":typ,"count":n}
                         for typ,n in sorted(errors.items(),key=lambda x:(-x[1],x[0]))[:25]]
                     r["junit_diagnostics"]="AVAILABLE"
@@ -237,7 +245,7 @@ def main():
                          "cpu_count", "ram_gib", "registry_counts", "pytest",
                          "blocker_count", "suite_status", "step_checks", "steps", "reason",
                          "junit_case_count", "python_failure_modules",
-                         "python_error_types", "junit_diagnostics", "node_tap_counts",
+                         "python_error_types", "python_failed_tests", "junit_diagnostics", "node_tap_counts",
                          "node_failed_modules", "node_diagnostics")
             proof = {k: obj[k] for k in whitelist if k in obj}
             proof["receipt_sha256"] = sha(canon(proof).encode("ascii"))
