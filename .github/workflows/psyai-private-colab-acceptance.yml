@@ -1,0 +1,130 @@
+name: PsyAI private source Colab CPU acceptance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '41 8 * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/psyai-private-colab-acceptance.yml'
+      - 'tools/psyai_private_colab_runner.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-private-colab-acceptance
+  cancel-in-progress: false
+
+jobs:
+  private-source-cpu-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    env:
+      SOURCE_ACCESS_PRESENT: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
+      EXISTING_COLAB_ADC_PRESENT: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+    steps:
+      - name: Checkout PUBLIC launcher only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Python for launch and static validation
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate private CPU transport syntax and remote script
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tools/psyai_private_colab_runner.py
+          python - <<'PY'
+          import importlib.util
+          from pathlib import Path
+          p=Path('tools/psyai_private_colab_runner.py')
+          s=importlib.util.spec_from_file_location('psyai_private_colab',p)
+          m=importlib.util.module_from_spec(s)
+          s.loader.exec_module(m)
+          remote=m.remote_script('a'*40,b'non-secret-synthetic-probe')
+          compile(remote,'remote_colab_source','exec')
+          assert m.blocked('TEST')['status']=='BLOCKED'
+          assert m.SCHEMA=='PSYAI_PRIVATE_COLAB_PREWINDOWS_V1'
+          print('PASS_SYNTAX_AND_FAIL_CLOSED_RECEIPT')
+          PY
+      - name: Record read-only source access prerequisite
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os,pathlib
+          source=os.getenv('SOURCE_ACCESS_PRESENT')=='true'
+          colab=os.getenv('EXISTING_COLAB_ADC_PRESENT')=='true'
+          if source and colab:
+              print('PRIVATE_SOURCE_AND_EXISTING_ADC_READY')
+          else:
+              reason='BLOCKED_PRIVATE_SOURCE_READER_NOT_CONFIGURED' if not source else 'BLOCKED_EXISTING_COLAB_ADC_NOT_CONFIGURED'
+              pathlib.Path('psyai-private-colab-proof.json').write_text(
+                  json.dumps({'schema':'PSYAI_PRIVATE_COLAB_PREWINDOWS_V1',
+                              'status':'BLOCKED','reason':reason,
+                              'source_loaded':False,'model_e2e':False,
+                              'windows_e2e':False,'full_tz_accepted':False})+'\n')
+              print(reason)
+          PY
+      - name: Checkout PRIVATE PsyAI branch using isolated read-only source key
+        if: ${{ env.SOURCE_ACCESS_PRESENT == 'true' && env.EXISTING_COLAB_ADC_PRESENT == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: feature/psyai-tz-v11-implementation-20261026
+          path: private_psyai
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+      - name: Recover EXISTING Google Colab ADC, no new authorization
+        if: ${{ env.SOURCE_ACCESS_PRESENT == 'true' && env.EXISTING_COLAB_ADC_PRESENT == 'true' }}
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Install the same Colab CLI already used for AVRORA
+        if: ${{ env.SOURCE_ACCESS_PRESENT == 'true' && env.EXISTING_COLAB_ADC_PRESENT == 'true' }}
+        run: python -m pip install -q --disable-pip-version-check 'google-colab-cli==0.7.4'
+      - name: Run private source acceptance in actual Colab CPU
+        if: ${{ env.SOURCE_ACCESS_PRESENT == 'true' && env.EXISTING_COLAB_ADC_PRESENT == 'true' }}
+        shell: bash
+        run: |
+          set +e
+          python tools/psyai_private_colab_runner.py
+          rc=$?
+          echo "PREWINDOWS_TRANSPORT_EXIT=$rc"
+          exit 0
+      - name: Upload only aggregate SHA-bound receipt, NEVER sources or logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-private-colab-proof-${{ github.run_id }}
+          path: psyai-private-colab-proof.json
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Fail closed unless real private pre-Windows suite passed
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python - <<'PY_PROOF'
+          import json,pathlib,sys
+          path=pathlib.Path('psyai-private-colab-proof.json')
+          if not path.is_file():
+              print('BLOCKED_NO_PRIVATE_COLAB_RECEIPT')
+              sys.exit(2)
+          evidence=json.loads(path.read_text())
+          status=evidence.get('status','BLOCKED')
+          print('PSYAI_PRIVATE_PREWINDOWS_STATUS',status)
+          sys.exit(0 if status=='PREWINDOWS_PASS' else 2)
+          PY_PROOF
+      - name: Remove temporary credentials and private checkout
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then rm -f "$GOOGLE_APPLICATION_CREDENTIALS"; fi
+          rm -rf private_psyai
+          rm -f psyai-private-colab-proof.json
