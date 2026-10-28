@@ -167,6 +167,26 @@ try:
                     r["junit_diagnostics"]="AVAILABLE"
                 except (OSError,ValueError,ET.ParseError) as diagnostic:
                     r["junit_diagnostics"]="UNAVAILABLE_"+type(diagnostic).__name__
+                # Parse only numeric TAP counters and preexisting test filenames,
+                # never reveal Node assertion messages or stack traces.
+                node_log=app/".psyai_test_runs"/"prewindows"/"node.log"
+                try:
+                    with node_log.open("r",encoding="utf-8",errors="replace") as stream:
+                        node_text=stream.read(3000000)
+                    node_counts={}
+                    for key in ("tests","pass","fail","cancelled","skipped","todo"):
+                        match=re.search(r"(?m)^# "+key+r" (\\d+)\\s*$",node_text)
+                        if match:
+                            node_counts[key]=int(match.group(1))
+                    node_failed=collections.Counter(re.findall(
+                        r"(?m)^\\s*not ok \\d+ - (?:tests/)?(test_[a-zA-Z0-9_]{1,90}\\.cjs)(?:\\s|$)",
+                        node_text))
+                    r["node_tap_counts"]=node_counts
+                    r["node_failed_modules"]=[{"module":n,"count":count}
+                        for n,count in node_failed.most_common(30)]
+                    r["node_diagnostics"]="AVAILABLE" if node_counts else "UNAVAILABLE_TAP"
+                except OSError:
+                    r["node_diagnostics"]="UNAVAILABLE_LOG"
             r["status"]="PREWINDOWS_PASS" if ok and r.get("suite_status")=="PASS" else "PREWINDOWS_FAIL"
         else:
             r["status"]="BLOCKED_DEPENDENCY_INSTALL"
@@ -217,7 +237,8 @@ def main():
                          "cpu_count", "ram_gib", "registry_counts", "pytest",
                          "blocker_count", "suite_status", "step_checks", "steps", "reason",
                          "junit_case_count", "python_failure_modules",
-                         "python_error_types", "junit_diagnostics")
+                         "python_error_types", "junit_diagnostics", "node_tap_counts",
+                         "node_failed_modules", "node_diagnostics")
             proof = {k: obj[k] for k in whitelist if k in obj}
             proof["receipt_sha256"] = sha(canon(proof).encode("ascii"))
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
