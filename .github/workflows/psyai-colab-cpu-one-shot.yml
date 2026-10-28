@@ -1,0 +1,101 @@
+name: PsyAI one-shot CPU Colab using existing AVRORA Google authorization
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/psyai-colab-cpu-one-shot.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-cpu-one-shot-isolated
+  cancel-in-progress: false
+
+jobs:
+  existing-authorization-cpu-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PSYAI_COLAB_ONLY_CPU: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify isolated probe's syntax
+        run: python -m py_compile tools/psyai_colab_cpu_reuse_probe.py
+      - name: Require ALREADY CONFIGURED Colab OAuth credentials (no new auth)
+        env:
+          HAVE_OLD_COLAB_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+        run: |
+          if [ "$HAVE_OLD_COLAB_ADC" != "true" ]; then
+            echo "BLOCKED_EXISTING_COLAB_ADC_NOT_PRESENT"
+            exit 2
+          fi
+      - name: Recover existing Google ADC into temporary runner file
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Reuse same verified google-colab-cli used by AVRORA
+        run: python -m pip install -q --disable-pip-version-check 'google-colab-cli==0.7.4'
+      - name: Launch a distinct real Colab CPU session; report only sanitized receipt
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Authorized by the already-existing Google Colab ADC.
+          # The script contains NO private PsyAI code or patient data.
+          colab --auth=adc run tools/psyai_colab_cpu_reuse_probe.py > remote_colab_private.log 2>&1
+          rc=$?
+          export PSYAI_COLAB_COMMAND_EXIT="$rc"
+          python - <<'PY'
+          import hashlib, json, os, pathlib, sys
+          raw=pathlib.Path("remote_colab_private.log").read_text(encoding="utf-8",errors="replace")
+          mark="PSYAI_COLAB_CPU_RECEIPT="
+          found=[line.split(mark,1)[1] for line in raw.splitlines() if mark in line]
+          if len(found)==1:
+              try:
+                  obj=json.loads(found[0])
+                  sha=obj.pop("receipt_sha256",None)
+                  actual=hashlib.sha256(json.dumps(obj,sort_keys=True,separators=(",",":"),ensure_ascii=True).encode()).hexdigest()
+                  if sha!=actual or obj.get("schema")!="PSYAI_COLAB_CPU_REUSE_V1":
+                      raise ValueError("INVALID_REMOTE_RECEIPT")
+                  obj["receipt_sha256"]=sha
+                  out={"schema":"PSYAI_EXISTING_ADC_LAUNCH_EVIDENCE_V1","status":obj["status"],
+                       "colab_cpu":True,"private_psyai_source_loaded":False,"receipt":obj,
+                       "github_run_id":os.environ.get("GITHUB_RUN_ID","")}
+                  pathlib.Path("psyai_colab_cpu_proof.json").write_text(json.dumps(out,indent=2)+"\n")
+                  print("PSYAI_COLAB_RECEIPT_VERIFIED",obj["status"],
+                        "CPU_RAM_GIB",obj.get("ram_gib"),"MODEL_HASH_OK",obj["model_sha256_verified"],
+                        "MODEL_INFERENCE_OK",obj["actual_generation"])
+                  sys.exit(0 if obj["actual_generation"] and obj["model_sha256_verified"] else 2)
+              except (ValueError,KeyError,TypeError):
+                  pass
+          # Fail-closed sanitized status, never print remote output (could contain credentials).
+          out={"schema":"PSYAI_EXISTING_ADC_LAUNCH_EVIDENCE_V1","status":"BLOCKED_NO_VALID_REMOTE_RECEIPT",
+               "colab_cpu":False,"private_psyai_source_loaded":False,"github_run_id":os.environ.get("GITHUB_RUN_ID",""),
+               "colab_command_exit_code":os.environ.get("PSYAI_COLAB_COMMAND_EXIT","")}
+          pathlib.Path("psyai_colab_cpu_proof.json").write_text(json.dumps(out,indent=2)+"\n")
+          print("BLOCKED_NO_VALID_REMOTE_RECEIPT")
+          sys.exit(2)
+          PY
+      - name: Publish proof only, not remote logs or secrets
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-existing-colab-auth-proof-${{ github.run_id }}
+          path: psyai_colab_cpu_proof.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Erase temporary Google credentials and remote logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
+          rm -f remote_colab_private.log
