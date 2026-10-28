@@ -190,7 +190,7 @@ try:
                             # Only declarative module/function names, NEVER skip
                             # messages, values, code, paths or fixture arguments.
                             cls=case.attrib.get("classname","")
-                            mods=re.findall(r"(?:^|[./])(?P<mod>test_[a-zA-Z0-9_]{1,90})(?=\\.|/|$)",cls)
+                            mods=re.findall(r"(?:^|[./])(?P<mod>test_[a-zA-Z0-9_]{1,90})(?=\.|/|$)",cls)
                             fn=case.attrib.get("name","").split("[",1)[0]
                             if mods and re.fullmatch(r"test_[a-zA-Z0-9_]{1,90}",fn):
                                 skipped_tests[(mods[0],fn)]+=1
