@@ -192,10 +192,12 @@ try:
                     node_failed=collections.Counter()
                     node_locations=[]
                     for match in re.finditer(r"(?m)^\s*not ok \d+ - [^\n]*$",node_text):
-                        tail=node_text[match.end():match.end()+1800]
-                        # Emit ONLY the static test-file basename and source
-                        # line number. Never TAP labels, assertions or cases.
-                        found=re.search(r"(?:^|[/\\])(?P<name>test_[a-zA-Z0-9_]{1,90}\.cjs)(?::(?P<line>\d{1,5}):\d+)?(?=\s|$)",tail,re.M)
+                        # Some Node TAP failures are module-load failures:
+                        # the filename appears only in the 'not ok' header.
+                        # Others have a TestContext stack line ending ')'.
+                        # Neither raw header nor stack is ever published.
+                        tail=node_text[match.start():match.end()+1800]
+                        found=re.search(r"(?:^|[/\\])(?P<name>test_[a-zA-Z0-9_]{1,90}\.cjs)(?::(?P<line>\d{1,5}):\d+)?(?=[)\]\s]|$)",tail,re.M)
                         module=found.group("name") if found else "UNKNOWN_TEST_MODULE"
                         node_failed[module]+=1
                         if found:
