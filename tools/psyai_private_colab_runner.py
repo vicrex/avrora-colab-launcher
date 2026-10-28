@@ -186,9 +186,15 @@ try:
                         match=re.search(r"(?m)^# "+key+r" (\d+)\s*$",node_text)
                         if match:
                             node_counts[key]=int(match.group(1))
-                    node_failed=collections.Counter(re.findall(
-                        r"(?m)^\s*not ok \d+ - (?:tests/)?(test_[a-zA-Z0-9_]{1,90}\.cjs)(?:\s|$)",
-                        node_text))
+                    # Failure labels may contain arbitrary fixture text:
+                    # never publish them. Recover only strict on-disk test
+                    # module names from the neighbouring TAP stack lines.
+                    node_failed=collections.Counter()
+                    for match in re.finditer(r"(?m)^\s*not ok \d+ - [^\n]*$",node_text):
+                        tail=node_text[match.end():match.end()+1800]
+                        found=re.search(r"(?:^|[/\\])(?P<name>test_[a-zA-Z0-9_]{1,90}\.cjs)(?=:\d+|\s|$)",tail,re.M)
+                        module=found.group("name") if found else "UNKNOWN_TEST_MODULE"
+                        node_failed[module]+=1
                     r["node_tap_counts"]=node_counts
                     r["node_failed_modules"]=[{"module":n,"count":count}
                         for n,count in node_failed.most_common(30)]
