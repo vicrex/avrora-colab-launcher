@@ -175,11 +175,11 @@ try:
                         node_text=stream.read(3000000)
                     node_counts={}
                     for key in ("tests","pass","fail","cancelled","skipped","todo"):
-                        match=re.search(r"(?m)^# "+key+r" (\\d+)\\s*$",node_text)
+                        match=re.search(r"(?m)^# "+key+r" (\d+)\s*$",node_text)
                         if match:
                             node_counts[key]=int(match.group(1))
                     node_failed=collections.Counter(re.findall(
-                        r"(?m)^\\s*not ok \\d+ - (?:tests/)?(test_[a-zA-Z0-9_]{1,90}\\.cjs)(?:\\s|$)",
+                        r"(?m)^\s*not ok \d+ - (?:tests/)?(test_[a-zA-Z0-9_]{1,90}\.cjs)(?:\s|$)",
                         node_text))
                     r["node_tap_counts"]=node_counts
                     r["node_failed_modules"]=[{"module":n,"count":count}
