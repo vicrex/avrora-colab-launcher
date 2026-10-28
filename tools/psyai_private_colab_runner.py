@@ -115,6 +115,29 @@ try:
                 r["registry_counts"]=e.get("registry_counts",{})
                 r["pytest"]=e.get("pytest",{})
                 r["blocker_count"]=len(e.get("blockers",[]))
+                # Map static acceptance categories only. Never send the actual
+                # blocker strings because they may contain private test paths.
+                categories=collections.Counter()
+                for issue in e.get("blockers",[]):
+                    if not isinstance(issue,str):
+                        categories["OTHER"]+=1
+                    elif ": functional code and positive/negative test evidence absent" in issue:
+                        categories["PER_CONTROL_RUNTIME_EVIDENCE_MISSING"]+=1
+                    elif ": functional implementation unfinished" in issue:
+                        categories["SPEC_OR_BLOCKED_CONTROL"]+=1
+                    elif ": real test reference missing" in issue:
+                        categories["CONTROL_TEST_REFERENCE_MISSING"]+=1
+                    elif ": implementation paths missing" in issue:
+                        categories["CONTROL_IMPLEMENTATION_MISSING"]+=1
+                    elif "Python test failures/errors/skips" in issue:
+                        categories["PYTHON_SUITE_INCOMPLETE"]+=1
+                    elif "One or more full test commands failed." in issue:
+                        categories["TEST_COMMAND_FAILED"]+=1
+                    elif "Missing Node UI regression files" in issue:
+                        categories["NODE_TEST_DISCOVERY_FAILED"]+=1
+                    else:
+                        categories["OTHER"]+=1
+                r["acceptance_blocker_breakdown"]=dict(sorted(categories.items()))
                 r["suite_status"]=e.get("status")
                 r["step_checks"]=[{"name":x.get("name"),"ok":x.get("ok"),
                                    "exit_code":x.get("exit_code"),
@@ -273,7 +296,7 @@ def main():
             whitelist = ("schema", "status", "source_sha", "archive_sha256",
                          "model_e2e", "windows_e2e", "full_tz_accepted",
                          "cpu_count", "ram_gib", "registry_counts", "pytest",
-                         "blocker_count", "suite_status", "step_checks", "steps", "reason",
+                         "blocker_count", "acceptance_blocker_breakdown", "suite_status", "step_checks", "steps", "reason",
                          "junit_case_count", "python_failure_modules",
                          "python_error_types", "python_failed_tests", "junit_diagnostics", "node_tap_counts",
                          "node_failed_modules", "node_failed_locations", "node_diagnostics")
