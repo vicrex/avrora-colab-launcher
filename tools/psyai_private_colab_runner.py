@@ -57,6 +57,19 @@ def source_archive():
             raise ValueError("NODE_SYNTAX_PREFLIGHT_UNAVAILABLE") from None
         if check.returncode:
             raise ValueError("NODE_TEST_SYNTAX_INVALID")
+    # Exercise the synthetic Atlas DOM and provenance regression on the
+    # runner before asking Colab to execute the entire application suite.
+    atlas_test = SOURCE / "tests" / "test_decision_atlas.cjs"
+    if not atlas_test.is_file():
+        raise ValueError("NODE_ATLAS_TEST_MISSING")
+    try:
+        atlas = subprocess.run(["node", "--test", str(atlas_test)],
+            cwd=SOURCE, check=False, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        raise ValueError("NODE_ATLAS_PREFLIGHT_UNAVAILABLE") from None
+    if atlas.returncode:
+        raise ValueError("NODE_ATLAS_PREFLIGHT_FAILED")
     raw = subprocess.check_output(
         ["git", "-C", str(SOURCE), "archive", "--format=tar", "HEAD"],
         timeout=60, stderr=subprocess.DEVNULL)
@@ -326,7 +339,9 @@ def main():
                    "SOURCE_SHA_INVALID","UNEXPECTED_SOURCE_FILE_COUNT",
                    "UNSAFE_ARCHIVE_ENTRY","FORBIDDEN_TRACKED_SECRET_OR_DATA",
                    "SOURCE_ARCHIVE_EXCEEDS_LIMIT", "NODE_SUITE_MISSING",
-                   "NODE_SYNTAX_PREFLIGHT_UNAVAILABLE", "NODE_TEST_SYNTAX_INVALID"}
+                   "NODE_SYNTAX_PREFLIGHT_UNAVAILABLE", "NODE_TEST_SYNTAX_INVALID",
+                   "NODE_ATLAS_TEST_MISSING", "NODE_ATLAS_PREFLIGHT_UNAVAILABLE",
+                   "NODE_ATLAS_PREFLIGHT_FAILED"}
         proof = blocked(str(exc) if str(exc) in allowed else type(exc).__name__)
     OUTPUT.write_text(json.dumps(proof, indent=2) + "\n", encoding="utf-8")
     print("PSYAI_PRIVATE_COLAB", proof["status"], proof.get("reason", ""))
