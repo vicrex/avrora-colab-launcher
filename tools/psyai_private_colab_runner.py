@@ -139,16 +139,25 @@ try:
                         if problem is None:
                             continue
                         raw=case.attrib.get("classname","")
-                        # Forbid parameterized test IDs and any untrusted payload.
-                        name=raw.rsplit(".",1)[-1]
-                        if not re.fullmatch(r"test_[a-zA-Z0-9_]{1,90}",name):
-                            name="UNKNOWN_TEST_MODULE"
+                        # Extract only safe module names, never parametrized names
+                        # (their values can contain consultation-like fixture data).
+                        safe_parts=re.findall(r"(?:^|[./])(?P<mod>test_[a-zA-Z0-9_]{1,90})(?=\.|/|$)",raw)
+                        name=safe_parts[0] if safe_parts else "UNKNOWN_TEST_MODULE"
                         module_failures[(name,kind)]+=1
                         category=problem.attrib.get("type","")
-                        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,70}",category):
-                            errors[category]+=1
-                        else:
-                            errors["UNKNOWN_ERROR_TYPE"]+=1
+                        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,70}",category):
+                            # Pytest normally puts exception class in the message
+                            # attribute, NOT in type; never publish its raw text.
+                            safe_message=problem.attrib.get("message","")[:350]
+                            found=re.search(r"(?<![A-Za-z_])(AssertionError|"
+                                r"ModuleNotFoundError|ImportError|AttributeError|"
+                                r"FileNotFoundError|KeyError|TypeError|ValueError|"
+                                r"RuntimeError|OperationalError|IntegrityError|"
+                                r"PermissionError|TimeoutError|IndexError|"
+                                r"NameError|LookupError|OSError)(?![A-Za-z_])",
+                                safe_message)
+                            category=found.group(1) if found else "UNKNOWN_ERROR_TYPE"
+                        errors[category]+=1
                     r["junit_case_count"]=testcase_count
                     r["python_failure_modules"]=[{"module":mod,"kind":kind,"count":n}
                         for (mod,kind),n in sorted(module_failures.items(),
