@@ -190,14 +190,21 @@ try:
                     # never publish them. Recover only strict on-disk test
                     # module names from the neighbouring TAP stack lines.
                     node_failed=collections.Counter()
+                    node_locations=[]
                     for match in re.finditer(r"(?m)^\s*not ok \d+ - [^\n]*$",node_text):
                         tail=node_text[match.end():match.end()+1800]
-                        found=re.search(r"(?:^|[/\\])(?P<name>test_[a-zA-Z0-9_]{1,90}\.cjs)(?=:\d+|\s|$)",tail,re.M)
+                        # Emit ONLY the static test-file basename and source
+                        # line number. Never TAP labels, assertions or cases.
+                        found=re.search(r"(?:^|[/\\])(?P<name>test_[a-zA-Z0-9_]{1,90}\.cjs)(?::(?P<line>\d{1,5}):\d+)?(?=\s|$)",tail,re.M)
                         module=found.group("name") if found else "UNKNOWN_TEST_MODULE"
                         node_failed[module]+=1
+                        if found:
+                            lineno=int(found.group("line") or 0)
+                            node_locations.append({"module":module,"source_line":lineno})
                     r["node_tap_counts"]=node_counts
                     r["node_failed_modules"]=[{"module":n,"count":count}
                         for n,count in node_failed.most_common(30)]
+                    r["node_failed_locations"]=node_locations[:40]
                     r["node_diagnostics"]="AVAILABLE" if node_counts else "UNAVAILABLE_TAP"
                 except OSError:
                     r["node_diagnostics"]="UNAVAILABLE_LOG"
@@ -252,7 +259,7 @@ def main():
                          "blocker_count", "suite_status", "step_checks", "steps", "reason",
                          "junit_case_count", "python_failure_modules",
                          "python_error_types", "python_failed_tests", "junit_diagnostics", "node_tap_counts",
-                         "node_failed_modules", "node_diagnostics")
+                         "node_failed_modules", "node_failed_locations", "node_diagnostics")
             proof = {k: obj[k] for k in whitelist if k in obj}
             proof["receipt_sha256"] = sha(canon(proof).encode("ascii"))
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
