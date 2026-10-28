@@ -63,7 +63,7 @@ def source_archive():
 def remote_script(revision, packed):
     # PRIVATE source is embedded only in a temporary runner file, then passed
     # to the same authenticated Colab CPU used by the existing launcher.
-    template = r'''import base64,gzip,hashlib,io,json,os,pathlib,subprocess,sys,tarfile,tempfile
+    template = r'''import base64,collections,gzip,hashlib,io,json,os,pathlib,re,subprocess,sys,tarfile,tempfile,xml.etree.ElementTree as ET
 MARKER="PSYAI_PRIVATE_COLAB_EVIDENCE="
 SCHEMA="PSYAI_PRIVATE_COLAB_PREWINDOWS_V1"
 REV="__REV__"
@@ -116,8 +116,48 @@ try:
                 r["pytest"]=e.get("pytest",{})
                 r["blocker_count"]=len(e.get("blockers",[]))
                 r["suite_status"]=e.get("status")
-                r["step_checks"]=[{"name":x.get("name"),"ok":x.get("ok")}
+                r["step_checks"]=[{"name":x.get("name"),"ok":x.get("ok"),
+                                   "exit_code":x.get("exit_code"),
+                                   "error_type":x.get("error")}
                                   for x in e.get("commands",[])]
+                # Do NOT export pytest failure messages, arguments, fixture values,
+                # stack traces, consultation text or unfiltered Node stdout.
+                # The only allowlisted identifiers are Python TEST MODULE names.
+                xml=app/".psyai_test_runs"/"prewindows"/"python-junit.xml"
+                try:
+                    testsuite=ET.parse(xml).getroot()
+                    module_failures=collections.Counter()
+                    errors=collections.Counter()
+                    testcase_count=0
+                    for case in testsuite.iter("testcase"):
+                        testcase_count+=1
+                        problem=case.find("failure")
+                        kind="failure"
+                        if problem is None:
+                            problem=case.find("error")
+                            kind="error"
+                        if problem is None:
+                            continue
+                        raw=case.attrib.get("classname","")
+                        # Forbid parameterized test IDs and any untrusted payload.
+                        name=raw.rsplit(".",1)[-1]
+                        if not re.fullmatch(r"test_[a-zA-Z0-9_]{1,90}",name):
+                            name="UNKNOWN_TEST_MODULE"
+                        module_failures[(name,kind)]+=1
+                        category=problem.attrib.get("type","")
+                        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]{0,70}",category):
+                            errors[category]+=1
+                        else:
+                            errors["UNKNOWN_ERROR_TYPE"]+=1
+                    r["junit_case_count"]=testcase_count
+                    r["python_failure_modules"]=[{"module":mod,"kind":kind,"count":n}
+                        for (mod,kind),n in sorted(module_failures.items(),
+                            key=lambda x:(-x[1],x[0]))[:60]]
+                    r["python_error_types"]=[{"type":typ,"count":n}
+                        for typ,n in sorted(errors.items(),key=lambda x:(-x[1],x[0]))[:25]]
+                    r["junit_diagnostics"]="AVAILABLE"
+                except (OSError,ValueError,ET.ParseError) as diagnostic:
+                    r["junit_diagnostics"]="UNAVAILABLE_"+type(diagnostic).__name__
             r["status"]="PREWINDOWS_PASS" if ok and r.get("suite_status")=="PASS" else "PREWINDOWS_FAIL"
         else:
             r["status"]="BLOCKED_DEPENDENCY_INSTALL"
@@ -166,7 +206,9 @@ def main():
             whitelist = ("schema", "status", "source_sha", "archive_sha256",
                          "model_e2e", "windows_e2e", "full_tz_accepted",
                          "cpu_count", "ram_gib", "registry_counts", "pytest",
-                         "blocker_count", "suite_status", "step_checks", "steps", "reason")
+                         "blocker_count", "suite_status", "step_checks", "steps", "reason",
+                         "junit_case_count", "python_failure_modules",
+                         "python_error_types", "junit_diagnostics")
             proof = {k: obj[k] for k in whitelist if k in obj}
             proof["receipt_sha256"] = sha(canon(proof).encode("ascii"))
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
