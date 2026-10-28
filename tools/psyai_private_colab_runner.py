@@ -40,6 +40,20 @@ def source_archive():
         timeout=15, stderr=subprocess.DEVNULL).decode().strip()
     if not re.fullmatch("[a-f0-9]{40}", rev):
         raise ValueError("SOURCE_SHA_INVALID")
+    # Catch a broken Node test module before reserving a Colab session.
+    # Paths, syntax errors and private source lines never go to public logs.
+    node_tests = sorted(SOURCE.glob("tests/test_*.cjs"))
+    if not node_tests:
+        raise ValueError("NODE_SUITE_MISSING")
+    for script in node_tests:
+        try:
+            check = subprocess.run(["node", "--check", str(script)],
+                check=False, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, timeout=15)
+        except (OSError, subprocess.TimeoutExpired):
+            raise ValueError("NODE_SYNTAX_PREFLIGHT_UNAVAILABLE") from None
+        if check.returncode:
+            raise ValueError("NODE_TEST_SYNTAX_INVALID")
     raw = subprocess.check_output(
         ["git", "-C", str(SOURCE), "archive", "--format=tar", "HEAD"],
         timeout=60, stderr=subprocess.DEVNULL)
@@ -308,7 +322,8 @@ def main():
                    "REMOTE_RECEIPT_HASH_MISMATCH","REMOTE_RECEIPT_SOURCE_OR_SCOPE_MISMATCH",
                    "SOURCE_SHA_INVALID","UNEXPECTED_SOURCE_FILE_COUNT",
                    "UNSAFE_ARCHIVE_ENTRY","FORBIDDEN_TRACKED_SECRET_OR_DATA",
-                   "SOURCE_ARCHIVE_EXCEEDS_LIMIT"}
+                   "SOURCE_ARCHIVE_EXCEEDS_LIMIT", "NODE_SUITE_MISSING",
+                   "NODE_SYNTAX_PREFLIGHT_UNAVAILABLE", "NODE_TEST_SYNTAX_INVALID"}
         proof = blocked(str(exc) if str(exc) in allowed else type(exc).__name__)
     OUTPUT.write_text(json.dumps(proof, indent=2) + "\n", encoding="utf-8")
     print("PSYAI_PRIVATE_COLAB", proof["status"], proof.get("reason", ""))
