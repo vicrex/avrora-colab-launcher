@@ -202,7 +202,22 @@ try:
                         node_failed[module]+=1
                         if found:
                             lineno=int(found.group("line") or 0)
-                            node_locations.append({"module":module,"source_line":lineno})
+                            detail={"module":module,"source_line":lineno}
+                            # Only an allowlisted exception CLASS, never the
+                            # message, call arguments, source or assertion.
+                            kind=re.search(r"(?m)^\s*name:\s*'(AssertionError|ReferenceError|"
+                                r"TypeError|SyntaxError|RangeError|Error)'\s*$",tail)
+                            detail["error_kind"]=kind.group(1) if kind else "UNKNOWN"
+                            # An exact match against a static TEST DECLARATION
+                            # discloses only its ordinal, never its raw label.
+                            source=app/"tests"/module
+                            if source.is_file():
+                                titles=re.findall(r"(?m)^\s*test\(['\"]([^'\"\n]{1,140})['\"]",
+                                                  source.read_text(encoding="utf-8",errors="replace"))
+                                label=match.group(0).split(" - ",1)[-1].strip()
+                                if titles.count(label)==1:
+                                    detail["test_ordinal"]=titles.index(label)+1
+                            node_locations.append(detail)
                     r["node_tap_counts"]=node_counts
                     r["node_failed_modules"]=[{"module":n,"count":count}
                         for n,count in node_failed.most_common(30)]
