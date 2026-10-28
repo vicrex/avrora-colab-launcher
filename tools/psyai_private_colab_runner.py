@@ -181,10 +181,20 @@ try:
                     testsuite=ET.parse(xml).getroot()
                     module_failures=collections.Counter()
                     test_failures=collections.Counter()
+                    skipped_tests=collections.Counter()
                     errors=collections.Counter()
                     testcase_count=0
                     for case in testsuite.iter("testcase"):
                         testcase_count+=1
+                        if case.find("skipped") is not None:
+                            # Only declarative module/function names, NEVER skip
+                            # messages, values, code, paths or fixture arguments.
+                            cls=case.attrib.get("classname","")
+                            mods=re.findall(r"(?:^|[./])(?P<mod>test_[a-zA-Z0-9_]{1,90})(?=\\.|/|$)",cls)
+                            fn=case.attrib.get("name","").split("[",1)[0]
+                            if mods and re.fullmatch(r"test_[a-zA-Z0-9_]{1,90}",fn):
+                                skipped_tests[(mods[0],fn)]+=1
+                            continue
                         problem=case.find("failure")
                         kind="failure"
                         if problem is None:
@@ -223,6 +233,8 @@ try:
                     r["python_failed_tests"]=[{"module":mod,"test":fn,"kind":kind,"count":n}
                         for (mod,fn,kind),n in sorted(test_failures.items(),
                             key=lambda x:(-x[1],x[0]))[:130]]
+                    r["python_skipped_tests"]=[{"module":mod,"test":fn,"count":n}
+                        for (mod,fn),n in sorted(skipped_tests.items())[:40]]
                     r["python_error_types"]=[{"type":typ,"count":n}
                         for typ,n in sorted(errors.items(),key=lambda x:(-x[1],x[0]))[:25]]
                     r["junit_diagnostics"]="AVAILABLE"
@@ -328,7 +340,7 @@ def main():
                          "cpu_count", "ram_gib", "registry_counts", "pytest",
                          "blocker_count", "acceptance_blocker_breakdown", "suite_status", "step_checks", "steps", "reason",
                          "junit_case_count", "python_failure_modules",
-                         "python_error_types", "python_failed_tests", "junit_diagnostics", "node_tap_counts",
+                         "python_error_types", "python_failed_tests", "python_skipped_tests", "junit_diagnostics", "node_tap_counts",
                          "node_failed_modules", "node_failed_locations", "node_diagnostics")
             proof = {k: obj[k] for k in whitelist if k in obj}
             proof["receipt_sha256"] = sha(canon(proof).encode("ascii"))
