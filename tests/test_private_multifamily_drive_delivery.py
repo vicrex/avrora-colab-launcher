@@ -13,11 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/multifamily-sweep-smoke.yml"
 
 
-def valid_payload():
-    ids = [f"{i:064x}" for i in range(64)]
+def valid_payload(count=64):
+    ids = [f"{i:064x}" for i in range(count)]
     report = {
         "schema": "AVRORA_MULTIFAMILY_SHADOW_SWEEP_V1",
-        "count": 64,
+        "count": count,
         "candidate_ids": ids,
         "models": [{"candidate_id": cid, "train": {}, "validation": {}} for cid in ids],
         "real": "OFF", "holdout": "SEALED",
@@ -33,6 +33,16 @@ class PrivateDriveDeliveryContract(unittest.TestCase):
         full, receipt = validate_report(raw)
         self.assertEqual(full, hashlib.sha256(raw).hexdigest())
         self.assertEqual(receipt, json.loads(raw)["receipt_sha256"])
+
+    def test_valid_terminal_32_report_uses_exact_byte_digest(self):
+        raw = valid_payload(32)
+        full, receipt = validate_report(raw)
+        self.assertEqual(full, hashlib.sha256(raw).hexdigest())
+        self.assertEqual(receipt, json.loads(raw)["receipt_sha256"])
+
+    def test_noncanonical_partial_count_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_report(valid_payload(31))
 
     def test_modified_report_rejected_after_receipt(self):
         raw = valid_payload().replace(b'"count":64', b'"count":63')
