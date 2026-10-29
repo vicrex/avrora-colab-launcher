@@ -40,6 +40,19 @@ def source_archive():
         timeout=15, stderr=subprocess.DEVNULL).decode().strip()
     if not re.fullmatch("[a-f0-9]{40}", rev):
         raise ValueError("SOURCE_SHA_INVALID")
+    # Catch Python syntax failures before reserving Colab time; compile
+    # directly from bytes so this read-only public runner creates no private
+    # __pycache__ files and never exposes source lines in its logs.
+    source_python = sorted(SOURCE.rglob("*.py"))
+    if not source_python:
+        raise ValueError("PYTHON_SOURCE_SUITE_MISSING")
+    for script in source_python:
+        if script.is_symlink() or not script.is_file():
+            raise ValueError("UNSAFE_SOURCE_PYTHON_ENTRY")
+        try:
+            compile(script.read_bytes(), str(script.relative_to(SOURCE)), "exec")
+        except (SyntaxError, UnicodeError, OSError, ValueError):
+            raise ValueError("PYTHON_SOURCE_SYNTAX_INVALID") from None
     # Catch a broken Node test module before reserving a Colab session.
     # Paths, syntax errors and private source lines never go to public logs.
     node_tests = sorted(SOURCE.glob("tests/test_*.cjs"))
@@ -353,7 +366,8 @@ def main():
                    "SOURCE_ARCHIVE_EXCEEDS_LIMIT", "NODE_SUITE_MISSING",
                    "NODE_SYNTAX_PREFLIGHT_UNAVAILABLE", "NODE_TEST_SYNTAX_INVALID",
                    "NODE_ATLAS_TEST_MISSING", "NODE_ATLAS_PREFLIGHT_UNAVAILABLE",
-                   "NODE_ATLAS_PREFLIGHT_FAILED"}
+                   "NODE_ATLAS_PREFLIGHT_FAILED", "PYTHON_SOURCE_SUITE_MISSING",
+                   "UNSAFE_SOURCE_PYTHON_ENTRY", "PYTHON_SOURCE_SYNTAX_INVALID"}
         proof = blocked(str(exc) if str(exc) in allowed else type(exc).__name__)
     OUTPUT.write_text(json.dumps(proof, indent=2) + "\n", encoding="utf-8")
     print("PSYAI_PRIVATE_COLAB", proof["status"], proof.get("reason", ""))
