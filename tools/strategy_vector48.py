@@ -29,16 +29,18 @@ DIMENSIONS=(
  'prospective_oos_verified','maker_fill_verified',
  'posthoc_subset_selection','funding_verified','l2_queue_verified')
 assert len(DIMENSIONS)==48
+VALID_COUNTS=(32,64)
 
 def canonical(x):return json.dumps(x,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
 def sha(x):return hashlib.sha256(x).hexdigest()
-def check_report(data):
+def check_report(data,expected_count=64):
+ if type(expected_count) is not int or expected_count not in VALID_COUNTS:raise ValueError('BLOCKED_VECTOR_EXPECTED_COUNT')
  if (not isinstance(data,dict) or data.get('schema')!='AVRORA_MULTIFAMILY_SHADOW_SWEEP_V1' or
-   data.get('count')!=64 or data.get('real')!='OFF' or data.get('holdout')!='SEALED' or
+   data.get('count')!=expected_count or data.get('real')!='OFF' or data.get('holdout')!='SEALED' or
    data.get('fill_proven') is not False or data.get('oos_proven') is not False):raise ValueError('BLOCKED_VECTOR_UNTRUSTED_REPORT')
  receipt=data.get('receipt_sha256')
  if receipt!=sha(canonical({k:v for k,v in data.items() if k!='receipt_sha256'})):raise ValueError('BLOCKED_VECTOR_REPORT_HASH')
- if len(data.get('models',[]))!=64 or len(set(data.get('candidate_ids',[])))!=64 or [m.get('candidate_id') for m in data['models']]!=data['candidate_ids']:raise ValueError('BLOCKED_VECTOR_MODEL_ID_PARITY')
+ if len(data.get('models',[]))!=expected_count or len(set(data.get('candidate_ids',[])))!=expected_count or [m.get('candidate_id') for m in data['models']]!=data['candidate_ids']:raise ValueError('BLOCKED_VECTOR_MODEL_ID_PARITY')
  return receipt
 
 def stdev(nums):
@@ -83,10 +85,10 @@ def vector_for(model):
  return {'candidate_id':model['candidate_id'],'raw48':values,'observed_mask48':[int(x is not None) for x in values],
          'prospective_oos_verified':False,'maker_fill_verified':False}
 
-def stage(report_bytes):
- report=json.loads(report_bytes);receipt=check_report(report)
+def stage(report_bytes,expected_count=64):
+ report=json.loads(report_bytes);receipt=check_report(report,expected_count)
  rows=[vector_for(m) for m in report['models']]
- payload={'schema':'AVRORA_PRIVATE_VECTOR_DELTA48_V1','dimension_names':DIMENSIONS,'count':64,
+ payload={'schema':'AVRORA_PRIVATE_VECTOR_DELTA48_V1','dimension_names':DIMENSIONS,'count':expected_count,
    'source_report_sha256':sha(report_bytes),'source_receipt_sha256':receipt,
    'strategies':rows,'graph_attested':False,'holdout':'SEALED','real':'OFF',
    'oos_verified':False,'maker_fill_verified':False,'private_only':True,
@@ -95,10 +97,10 @@ def stage(report_bytes):
  return payload
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('--input',required=True);p.add_argument('--output',required=True);a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('--input',required=True);p.add_argument('--output',required=True);p.add_argument('--expected-count',type=int,default=64);a=p.parse_args()
  output=Path(a.output)
  if output.exists():raise SystemExit('BLOCKED_VECTOR_OVERWRITE')
- d=stage(Path(a.input).read_bytes());output.write_bytes(canonical(d)+b'\n')
+ d=stage(Path(a.input).read_bytes(),a.expected_count);output.write_bytes(canonical(d)+b'\n')
  # No candidate IDs, PnLs or vectors in public job stdout.
  print('PASS_PRIVATE_VECTOR48_STAGE_ONLY',d['count'],d['stage_sha256'])
 if __name__=='__main__':main()
