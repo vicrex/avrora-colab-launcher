@@ -26,6 +26,12 @@ SPACE_SIZE = 12000
 PER_BATCH = 64
 BATCH_COUNT = (SPACE_SIZE + PER_BATCH - 1) // PER_BATCH
 LOOKBACK_HOURS = 24
+# PR #80 fixed the legitimate final 32-case batch, but the historical
+# failed hour aged out of the default 24-hour catch-up before deployment.
+# Allow exactly that immutable hour to be recovered for a bounded period.
+# This does not widen normal hourly replay, change data, or unseal HOLDOUT.
+PINNED_TERMINAL_HOUR = 498127
+PINNED_TERMINAL_GRACE_HOURS = 72
 LIMIT_PAGES = 8
 MAX_ZIP_BYTES = 100_000
 MAX_FETCH_ATTEMPTS = 4
@@ -223,6 +229,23 @@ def select_hour(current_hour: int, covered: set[int], partial: set[int], lookbac
     return None
 
 
+def recovery_window_start(current_hour: int) -> int:
+    """Include only the one known old gap, for a strictly bounded period."""
+    start = max(START_HOUR, current_hour - LOOKBACK_HOURS)
+    if PINNED_TERMINAL_HOUR <= current_hour <= PINNED_TERMINAL_HOUR + PINNED_TERMINAL_GRACE_HOURS:
+        return min(start, PINNED_TERMINAL_HOUR)
+    return start
+
+
+def select_recovery_target(current_hour: int, covered: set[int], partial: set[int]):
+    """Prioritize the terminal gap only if neither matching ACK nor partial receipt exists."""
+    if (PINNED_TERMINAL_HOUR <= current_hour <= PINNED_TERMINAL_HOUR + PINNED_TERMINAL_GRACE_HOURS
+            and PINNED_TERMINAL_HOUR not in covered
+            and PINNED_TERMINAL_HOUR not in partial):
+        return PINNED_TERMINAL_HOUR
+    return select_hour(current_hour, covered, partial)
+
+
 def main():
     if (os.environ.get("REAL", "OFF") != "OFF"
             or os.environ.get("HOLDOUT", "SEALED") != "SEALED"
@@ -232,10 +255,10 @@ def main():
     if not token:
         raise RecoveryBlocked("BLOCKED_RECOVERY_ACTIONS_READ_TOKEN")
     now_hour = int(datetime.now(timezone.utc).timestamp() // 3600)
-    start = max(START_HOUR, now_hour - LOOKBACK_HOURS)
+    start = recovery_window_start(now_hour)
     entries = collect_artifacts(token, start)
     covered, partial = verified_hours(entries, token, start, now_hour)
-    target = select_hour(now_hour, covered, partial)
+    target = select_recovery_target(now_hour, covered, partial)
     if target is None:
         status, target = "IDLE", ""
     else:
