@@ -45,7 +45,7 @@ jobs:
           assert not probe.verifies_generated_answer(
               "Как называется башня с огнём, помогающая кораблям найти берег?".encode("utf-8"))
           assert not probe.verifies_generated_answer(b"model exited with code 0")
-          assert not probe.verifies_generated_answer(b"\\xff\\xfe")
+          assert not probe.verifies_generated_answer(b"\xff\xfe")
           print("MODEL_CANARY_STATIC_GUARDS_PASS")
           PY_CHECK
       - name: Require ALREADY CONFIGURED Colab OAuth credentials (no new auth)
