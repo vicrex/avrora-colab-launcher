@@ -6,9 +6,9 @@ on:
   # GitHub Actions cron can be delayed; free Colab capacity is not guaranteed.
   schedule:
     - cron: '17 5 * * *'
-  # No push-triggered heavy CPU launch. Model probe can overlap the
-  # authorized private-source suite if a workflow fix itself triggers a run.
-  # Only explicit dispatch or the existing daily schedule may start it.
+  # No push-triggered heavy CPU launch. Only explicit dispatch or the
+  # existing daily schedule may start it; shared concurrency serializes it
+  # with the private application Colab CPU acceptance.
 
 permissions:
   contents: read
@@ -30,8 +30,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Verify isolated probe's syntax
-        run: python -m py_compile tools/psyai_colab_cpu_reuse_probe.py
+      - name: Verify isolated probe's syntax and synthetic generation-canary detector
+        run: |
+          python -m py_compile tools/psyai_colab_cpu_reuse_probe.py
+          python - <<'PY_CHECK'
+          import importlib.util
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location(
+              "model_probe",Path("tools/psyai_colab_cpu_reuse_probe.py"))
+          probe=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(probe)
+          assert probe.verifies_generated_answer("Ответ: маяк".encode("utf-8"))
+          assert not probe.verifies_generated_answer(b"")
+          assert not probe.verifies_generated_answer(
+              "Как называется башня с огнём, помогающая кораблям найти берег?".encode("utf-8"))
+          assert not probe.verifies_generated_answer(b"model exited with code 0")
+          assert not probe.verifies_generated_answer(b"\\xff\\xfe")
+          print("MODEL_CANARY_STATIC_GUARDS_PASS")
+          PY_CHECK
       - name: Require ALREADY CONFIGURED Colab OAuth credentials (no new auth)
         env:
           HAVE_OLD_COLAB_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}

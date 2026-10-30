@@ -33,9 +33,31 @@ def stage(label, status, reason=""):
     STAGES.append({"name":label,"status":status,"reason_code":reason})
 
 
-def run(cmd,*,cwd=None,timeout=1200):
-    return subprocess.run(cmd,cwd=cwd,check=False,timeout=timeout,stdout=subprocess.DEVNULL,
-                          stderr=subprocess.DEVNULL)
+def run(cmd,*,cwd=None,timeout=1200,capture_stdout=False):
+    # The final inference smoke must inspect real generated tokens, whereas
+    # dependency/build commands must never copy raw output into a receipt.
+    return subprocess.run(
+        cmd,cwd=cwd,check=False,timeout=timeout,
+        stdout=subprocess.PIPE if capture_stdout else subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def verifies_generated_answer(stdout):
+    """Conservative synthetic canary. No raw model output leaves Colab.
+
+    The answer word is deliberately absent from the prompt, so an echoed
+    prompt or a zero-token successful exit cannot be counted as generation.
+    """
+    if not isinstance(stdout, bytes) or not 1 <= len(stdout) <= 262144:
+        return False
+    try:
+        sample = stdout.decode('utf-8',errors='strict').lower()
+    except UnicodeDecodeError:
+        return False
+    import re
+    sample = re.sub(r'\\x1b\\[[0-?]*[ -/]*[@-~]', '', sample)
+    return 'маяк' in sample
 
 
 def get_memory_gib():
@@ -111,11 +133,17 @@ def main():
                                         try:
                                             result=run([str(binary),"-m",str(p),"-ngl","0",
                                                 "-c","1024","-t","4","-p",
-                                                "Напиши по-русски одно слово: привет","-n","32",
-                                                "--no-display-prompt"],timeout=900)
-                                            receipt["actual_generation"]=result.returncode==0
-                                            stage("inference","PASS" if result.returncode==0 else "FAIL",
-                                                "" if result.returncode==0 else "LLAMA_RETURN_CODE_NONZERO")
+                                                "Как называется башня с огнём, помогающая кораблям найти берег? Ответь одним русским словом.",
+                                                "-n","32","--no-display-prompt"],
+                                                timeout=900,capture_stdout=True)
+                                            verified = (result.returncode==0
+                                                        and verifies_generated_answer(result.stdout))
+                                            receipt["actual_generation"]=verified
+                                            stage("inference","PASS" if verified else "FAIL",
+                                                "" if verified else (
+                                                    "LLAMA_RETURN_CODE_NONZERO"
+                                                    if result.returncode else
+                                                    "NO_VERIFIED_GENERATED_CANARY"))
                                         except subprocess.TimeoutExpired:
                                             stage("inference","FAIL","LLAMA_CPU_TIMEOUT")
     except Exception:
