@@ -56,7 +56,7 @@ def verifies_generated_answer(stdout):
     except UnicodeDecodeError:
         return False
     import re
-    sample = re.sub(r'\\x1b\\[[0-?]*[ -/]*[@-~]', '', sample)
+    sample = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', sample)
     return 'маяк' in sample
 
 
