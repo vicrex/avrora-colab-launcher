@@ -82,6 +82,31 @@ class RecoveryUnitTests(unittest.TestCase):
             with self.assertRaises(RecoveryBlocked):
                 verified_hours(entries, "TOKEN", 498049, 498052)
 
+    def test_verified_final_32_batch_accepted_only_for_frozen_tail_hour(self):
+        runid = "41021335803"
+        report = {
+            "schema": "AVRORA_PUBLIC_SHADOW_MULTIFAMILY_BATCH_V1",
+            "research_hour_index": 498127, "run_id": runid,
+            "tested": 32, "real": "OFF", "holdout": "SEALED",
+            "oos": False, "maker_fill_proven": False,
+            "private_report_sha256": "a" * 64,
+        }
+        ack = {
+            "schema": "AVRORA_PRIVATE_MULTIFAMILY_DRIVE_SHA_ACK_V1",
+            "run_id": runid, "status": "PRIVATE_DRIVE_BYTE_READBACK_VERIFIED",
+            "sha256": "a" * 64, "real": "OFF", "holdout": "SEALED",
+        }
+        entries = {runid: {"aggregate": [{"id": 1}], "ack": [{"id": 2}]}}
+        def reader(url, token, limit=100000):
+            return archive("sweep_private_drive_ack.json" if "/artifacts/2/" in url
+                           else "sweep_public_summary.json",
+                           ack if "/artifacts/2/" in url else report)
+        with patch("tools.shadow_hour_recovery.fetch_bytes", side_effect=reader):
+            self.assertEqual(verified_hours(entries, "TOKEN", 498127, 498128), ({498127}, set()))
+            report["tested"] = 64
+            with self.assertRaises(RecoveryBlocked):
+                verified_hours(entries, "TOKEN", 498127, 498128)
+
     def test_orphan_ack_is_never_trusted_as_a_delivered_hour(self):
         with self.assertRaises(RecoveryBlocked):
             verified_hours({"40265080154": {"ack": [{"id": 2}]}}, "TOKEN",
