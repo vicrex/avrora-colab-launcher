@@ -6,10 +6,9 @@ on:
   # GitHub Actions cron can be delayed; free Colab capacity is not guaranteed.
   schedule:
     - cron: '17 5 * * *'
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/psyai-colab-cpu-one-shot.yml"
+  # No push-triggered heavy CPU launch. Model probe can overlap the
+  # authorized private-source suite if a workflow fix itself triggers a run.
+  # Only explicit dispatch or the existing daily schedule may start it.
 
 permissions:
   contents: read
