@@ -50,6 +50,10 @@ jobs:
       - name: Launch a distinct real Colab CPU session; report only sanitized receipt
         shell: bash
         run: |
+          # Actions invokes bash with -e; explicitly disable it around
+          # the remote Colab command so a non-zero exit still emits the
+          # sanitized fail-closed receipt and deterministic error reason.
+          set +e
           set -uo pipefail
           # Authorized by the already-existing Google Colab ADC.
           # The script contains NO private PsyAI code or patient data.
