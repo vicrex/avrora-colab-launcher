@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: psyai-cpu-one-shot-isolated
+  group: psyai-colab-cpu-global-nonparallel
   cancel-in-progress: false
 
 jobs:
