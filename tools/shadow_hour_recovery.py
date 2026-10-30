@@ -18,6 +18,7 @@ import urllib.request
 from urllib.parse import urlsplit
 import zipfile
 from datetime import datetime, timezone
+from tools.multifamily_batch_contract import expected_batch_count
 
 REPOSITORY = "vicrex/avrora-colab-launcher"
 API = f"https://api.github.com/repos/{REPOSITORY}/actions"
@@ -168,7 +169,7 @@ def verified_hours(entries: dict, token: str, start_hour: int, current_hour: int
             if (not isinstance(hour, int) or isinstance(hour, bool)
                     or hour < START_HOUR or hour > current_hour
                     or report.get("schema") != "AVRORA_PUBLIC_SHADOW_MULTIFAMILY_BATCH_V1"
-                    or str(report.get("run_id")) != run_id or report.get("tested") != 64
+                    or str(report.get("run_id")) != run_id or report.get("tested") != expected_batch_count(hour)
                     or report.get("real") != "OFF" or report.get("holdout") != "SEALED"
                     or report.get("oos") is not False
                     or report.get("maker_fill_proven") is not False
