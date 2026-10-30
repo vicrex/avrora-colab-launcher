@@ -2,17 +2,40 @@
 import copy,hashlib,json,unittest
 from tools import strategy_vector48 as v
 
-def mock_report():
+def mock_report(count=64):
  a={'by_week':{f'2021-01-{j:02d}':{'net20_usdt':1.,'trades':2} for j in range(1,7)},'trades':12,'gross_usdt':7.2,'notional_sum':600.,'net20_usdt':6.}
  b={'by_week':{f'2023-01-{j:02d}':{'net20_usdt':-1.,'trades':2} for j in range(1,7)},'trades':12,'gross_usdt':-4.8,'notional_sum':600.,'net20_usdt':-6.}
- models=[{'candidate_id':f'{i:064x}','family':v.FAMILIES[i%6],'side':('LONG','SHORT')[i%2],'train':copy.deepcopy(a),'validation':copy.deepcopy(b)} for i in range(64)]
- r={'schema':'AVRORA_MULTIFAMILY_SHADOW_SWEEP_V1','real':'OFF','holdout':'SEALED','fill_proven':False,'oos_proven':False,'count':64,'models':models,'candidate_ids':[x['candidate_id'] for x in models]};r['receipt_sha256']=v.sha(v.canonical(r));return r
+ models=[{'candidate_id':f'{i:064x}','family':v.FAMILIES[i%6],'side':('LONG','SHORT')[i%2],'train':copy.deepcopy(a),'validation':copy.deepcopy(b)} for i in range(count)]
+ r={'schema':'AVRORA_MULTIFAMILY_SHADOW_SWEEP_V1','real':'OFF','holdout':'SEALED','fill_proven':False,'oos_proven':False,'count':count,'models':models,'candidate_ids':[x['candidate_id'] for x in models]};r['receipt_sha256']=v.sha(v.canonical(r));return r
 
 class VectorStageTest(unittest.TestCase):
  def test_48_exact(self):self.assertEqual(len(v.DIMENSIONS),48)
  def test_all_models_preserved(self):
   s=v.stage(v.canonical(mock_report()));self.assertEqual(len(s['strategies']),64)
   self.assertEqual(len({x['candidate_id'] for x in s['strategies']}),64)
+ def test_last_batch_32_models_is_valid_only_at_frozen_hour(self):
+  report=v.canonical(mock_report(32));result=v.stage(report,research_hour=498127)
+  self.assertEqual(result['count'],32)
+  self.assertEqual(len(result['strategies']),32)
+  self.assertEqual(len({r['candidate_id'] for r in result['strategies']}),32)
+  self.assertEqual(result['source_report_sha256'],v.sha(report))
+  with self.assertRaisesRegex(ValueError,'BLOCKED_VECTOR_UNTRUSTED_REPORT'):
+   v.stage(report,research_hour=498126)
+  with self.assertRaisesRegex(ValueError,'BLOCKED_VECTOR_UNTRUSTED_REPORT'):
+   v.stage(report)
+ def test_tail_refuses_truncated_or_padded_reports(self):
+  for count in (0,31,33,64):
+   with self.subTest(count=count),self.assertRaisesRegex(ValueError,'BLOCKED_VECTOR_UNTRUSTED_REPORT'):
+    v.stage(v.canonical(mock_report(count)),research_hour=498127)
+ def test_tail_duplicate_is_rejected(self):
+  report=mock_report(32);report['candidate_ids'][1]=report['candidate_ids'][0]
+  report['models'][1]['candidate_id']=report['candidate_ids'][0]
+  report['receipt_sha256']=v.sha(v.canonical({k:x for k,x in report.items() if k!='receipt_sha256'}))
+  with self.assertRaisesRegex(ValueError,'BLOCKED_VECTOR_MODEL_ID_PARITY'):
+   v.stage(v.canonical(report),research_hour=498127)
+ def test_standard_64_rejected_at_tail_hour(self):
+  with self.assertRaisesRegex(ValueError,'BLOCKED_VECTOR_UNTRUSTED_REPORT'):
+   v.stage(v.canonical(mock_report()),research_hour=498127)
  def test_masks_null_not_zero(self):
   p=v.stage(v.canonical(mock_report()))['strategies'][0];i=v.DIMENSIONS.index('window_bars');self.assertIsNone(p['raw48'][i]);self.assertEqual(p['observed_mask48'][i],0)
  def test_refuse_future_proof(self):
