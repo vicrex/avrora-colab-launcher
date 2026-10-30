@@ -48,6 +48,7 @@ jobs:
         id: recovery
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          AVRORA_GAS_REPORT_WEBAPP_URL: ${{ secrets.AVRORA_GAS_REPORT_WEBAPP_URL }}
         run: python -m tools.shadow_hour_recovery
       - name: Checkout immutable PRIVATE AVRORA research engine
         if: ${{ steps.recovery.outputs.status == 'RUN' }}

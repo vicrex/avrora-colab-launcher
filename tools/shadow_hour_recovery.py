@@ -46,6 +46,20 @@ class RecoveryBlocked(ValueError):
     pass
 
 
+class GoogleAppsScriptRedirect(urllib.request.HTTPRedirectHandler):
+    """GET-only readiness redirect allowlist; no credentials forwarded."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        dst = urlsplit(newurl)
+        if (dst.scheme != "https"
+                or (dst.hostname or "").lower() not in (
+                    "script.google.com", "script.googleusercontent.com")
+                or dst.port not in (None, 443)
+                or dst.username or dst.password):
+            raise RecoveryBlocked("BLOCKED_GAS_UNTRUSTED_READINESS_REDIRECT")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 class GitHubArtifactRedirect(urllib.request.HTTPRedirectHandler):
     """Allow HTTPS artifact storage redirects but never forward the API bearer."""
 
@@ -237,11 +251,39 @@ def recovery_window_start(current_hour: int) -> int:
     return start
 
 
-def select_recovery_target(current_hour: int, covered: set[int], partial: set[int]):
+def receiver_supports_terminal32(url: str) -> bool:
+    """Only a live, explicitly versioned existing receiver allows retry of the known failed 32."""
+    if not url:
+        return False
+    try:
+        from tools.private_gas_drive_delivery import validate_url
+        validate_url(url)
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "avrora-terminal32-readiness/1",
+        })
+        opener = urllib.request.build_opener(GoogleAppsScriptRedirect())
+        with opener.open(req, timeout=12) as response:
+            raw = response.read(1025)
+        if len(raw) > 1024:
+            return False
+        result = json.loads(raw)
+        return (isinstance(result, dict)
+                and result.get("status") == "AVRORA_GAS_PRIVATE_RECEIVER_READY_NO_GET_DATA"
+                and result.get("terminal_32_supported") is True)
+    except (RecoveryBlocked, ValueError, OSError, urllib.error.URLError,
+            json.JSONDecodeError, UnicodeDecodeError, TypeError):
+        return False
+
+
+def select_recovery_target(current_hour: int, covered: set[int], partial: set[int],
+                           terminal_ready: bool = False):
     """Prioritize the terminal gap only if neither matching ACK nor partial receipt exists."""
-    if (PINNED_TERMINAL_HOUR <= current_hour <= PINNED_TERMINAL_HOUR + PINNED_TERMINAL_GRACE_HOURS
-            and PINNED_TERMINAL_HOUR not in covered
-            and PINNED_TERMINAL_HOUR not in partial):
+    if (terminal_ready is True
+            and PINNED_TERMINAL_HOUR <= current_hour <= PINNED_TERMINAL_HOUR + PINNED_TERMINAL_GRACE_HOURS
+            and PINNED_TERMINAL_HOUR not in covered):
+        # The historical partial aggregate was rejected by the old GAS
+        # count==64 gate before Drive write. Allow a single new run only
+        # after the deployed receiver explicitly advertises 32 support.
         return PINNED_TERMINAL_HOUR
     return select_hour(current_hour, covered, partial)
 
@@ -258,7 +300,13 @@ def main():
     start = recovery_window_start(now_hour)
     entries = collect_artifacts(token, start)
     covered, partial = verified_hours(entries, token, start, now_hour)
-    target = select_recovery_target(now_hour, covered, partial)
+    terminal_ready = False
+    if (PINNED_TERMINAL_HOUR <= now_hour <= PINNED_TERMINAL_HOUR + PINNED_TERMINAL_GRACE_HOURS
+            and PINNED_TERMINAL_HOUR not in covered):
+        terminal_ready = receiver_supports_terminal32(
+            os.environ.get("AVRORA_GAS_REPORT_WEBAPP_URL", ""))
+        print("AVRORA_TERMINAL32_RECEIVER", "READY" if terminal_ready else "WAIT_DEPLOYMENT")
+    target = select_recovery_target(now_hour, covered, partial, terminal_ready)
     if target is None:
         status, target = "IDLE", ""
     else:

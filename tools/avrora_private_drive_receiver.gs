@@ -46,7 +46,10 @@ function avroraCreateSharedSecretOnce() {
   console.log("COPY_TO_GITHUB_SECRET_AVRORA_GAS_REPORT_HMAC_KEY=" + secret);
 }
 function doGet() {
-  return avroraReply_({status: "AVRORA_GAS_PRIVATE_RECEIVER_READY_NO_GET_DATA"});
+  // Public, non-secret capability marker; used to avoid retrying terminal 32
+  // until the existing web-app deployment actually runs compatible code.
+  return avroraReply_({status: "AVRORA_GAS_PRIVATE_RECEIVER_READY_NO_GET_DATA",
+                       terminal_32_supported: true});
 }
 function doPost(e) {
   var lock = null;
