@@ -21,11 +21,11 @@ RECEIVER = ROOT / "tools/avrora_private_drive_receiver.gs"
 WORKFLOW = ROOT / ".github/workflows/multifamily-sweep-smoke.yml"
 
 
-def frozen_sample():
-    ids = [f"{i:064x}" for i in range(64)]
+def frozen_sample(count=64):
+    ids = [f"{i:064x}" for i in range(count)]
     obj = {
         "schema": "AVRORA_MULTIFAMILY_SHADOW_SWEEP_V1",
-        "count": 64, "candidate_ids": ids,
+        "count": count, "candidate_ids": ids,
         "models": [{"candidate_id": i, "train": {}, "validation": {}} for i in ids],
         "real": "OFF", "holdout": "SEALED",
         "oos_proven": False, "fill_proven": False,
@@ -48,6 +48,22 @@ class FreeDriveGasTests(unittest.TestCase):
             hashlib.sha256,
         ).hexdigest()
         self.assertEqual(expected, payload["signature"])
+
+    def test_valid_terminal_32_signed_payload(self):
+        raw = frozen_sample(32)
+        payload, ack = payload_and_ack(raw, "41028031248", KEY)
+        self.assertEqual(ack["bytes"], len(raw))
+        self.assertEqual(payload["sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertIn('"count":32', raw.decode("utf-8"))
+
+    def test_gas_receiver_source_gate_preserves_32_64_and_model_parity(self):
+        source = RECEIVER.read_text(encoding="utf-8")
+        self.assertIn("count !== 64 && count !== 32", source)
+        self.assertIn("report.models.length !== count", source)
+        self.assertIn("report.candidate_ids.length !== count", source)
+        self.assertIn("report.models[idx].candidate_id !== cid", source)
+        self.assertIn("seenCandidateIds[cid]", source)
+        self.assertIn("BLOCKED_CANDIDATE_PARITY", source)
 
     def test_refuse_modified_source_receipt(self):
         with self.assertRaises(ValueError):

@@ -81,13 +81,26 @@ function doPost(e) {
       throw new Error("BLOCKED_BYTES_DIGEST");
     }
     var report = JSON.parse(Utilities.newBlob(bytes).getDataAsString("UTF-8"));
+    // The frozen 12,000-case discovery grid ends in exactly 32 cases.
+    // Accept only canonical batch sizes; never relax HMAC, SHA or safety fields.
+    var count = report.count;
     if (report.schema !== "AVRORA_MULTIFAMILY_SHADOW_SWEEP_V1"
         || report.real !== "OFF" || report.holdout !== "SEALED"
         || report.oos_proven !== false || report.fill_proven !== false
-        || report.count !== 64 || !Array.isArray(report.models)
-        || report.models.length !== 64 || !Array.isArray(report.candidate_ids)
-        || report.candidate_ids.length !== 64) {
+        || (count !== 64 && count !== 32)
+        || !Array.isArray(report.models) || report.models.length !== count
+        || !Array.isArray(report.candidate_ids) || report.candidate_ids.length !== count) {
       throw new Error("BLOCKED_UNSAFE_REPORT");
+    }
+    var seenCandidateIds = Object.create(null);
+    for (var idx = 0; idx < count; idx++) {
+      var cid = report.candidate_ids[idx];
+      if (typeof cid !== "string" || !/^[a-f0-9]{64}$/.test(cid)
+          || seenCandidateIds[cid] || !report.models[idx]
+          || report.models[idx].candidate_id !== cid) {
+        throw new Error("BLOCKED_CANDIDATE_PARITY");
+      }
+      seenCandidateIds[cid] = true;
     }
     lock = LockService.getScriptLock();
     if (!lock.tryLock(20000)) throw new Error("BLOCKED_CONCURRENT_WRITE");
