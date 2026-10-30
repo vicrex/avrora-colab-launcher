@@ -6,8 +6,9 @@ additional clocks, tokens, external APIs, trading, or new data sources.
 Full private report already goes to Drive via the existing owner GAS route.
 """
 from __future__ import annotations
-import argparse,hashlib,json,math
+import argparse,hashlib,json,math,os
 from pathlib import Path
+from tools.multifamily_batch_contract import expected_batch_count
 
 FAMILIES=('TREND_BREAK','SQUEEZE_BREAK','RETEST_CONTINUATION','FALSE_BREAK_FADE','MOMENTUM_BAR','EMA_REVERSION')
 DIMENSIONS=(
@@ -32,13 +33,17 @@ assert len(DIMENSIONS)==48
 
 def canonical(x):return json.dumps(x,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
 def sha(x):return hashlib.sha256(x).hexdigest()
-def check_report(data):
+def check_report(data, research_hour=None):
+ expected=expected_batch_count(research_hour) if research_hour is not None else 64
  if (not isinstance(data,dict) or data.get('schema')!='AVRORA_MULTIFAMILY_SHADOW_SWEEP_V1' or
-   data.get('count')!=64 or data.get('real')!='OFF' or data.get('holdout')!='SEALED' or
+   data.get('count')!=expected or data.get('real')!='OFF' or data.get('holdout')!='SEALED' or
    data.get('fill_proven') is not False or data.get('oos_proven') is not False):raise ValueError('BLOCKED_VECTOR_UNTRUSTED_REPORT')
  receipt=data.get('receipt_sha256')
  if receipt!=sha(canonical({k:v for k,v in data.items() if k!='receipt_sha256'})):raise ValueError('BLOCKED_VECTOR_REPORT_HASH')
- if len(data.get('models',[]))!=64 or len(set(data.get('candidate_ids',[])))!=64 or [m.get('candidate_id') for m in data['models']]!=data['candidate_ids']:raise ValueError('BLOCKED_VECTOR_MODEL_ID_PARITY')
+ if (not isinstance(data.get('models'),list) or not isinstance(data.get('candidate_ids'),list) or
+   len(data['models'])!=expected or len(data['candidate_ids'])!=expected or
+   len(set(data['candidate_ids']))!=expected or
+   [m.get('candidate_id') for m in data['models']]!=data['candidate_ids']):raise ValueError('BLOCKED_VECTOR_MODEL_ID_PARITY')
  return receipt
 
 def stdev(nums):
@@ -83,10 +88,10 @@ def vector_for(model):
  return {'candidate_id':model['candidate_id'],'raw48':values,'observed_mask48':[int(x is not None) for x in values],
          'prospective_oos_verified':False,'maker_fill_verified':False}
 
-def stage(report_bytes):
- report=json.loads(report_bytes);receipt=check_report(report)
+def stage(report_bytes, research_hour=None):
+ report=json.loads(report_bytes);receipt=check_report(report, research_hour)
  rows=[vector_for(m) for m in report['models']]
- payload={'schema':'AVRORA_PRIVATE_VECTOR_DELTA48_V1','dimension_names':DIMENSIONS,'count':64,
+ payload={'schema':'AVRORA_PRIVATE_VECTOR_DELTA48_V1','dimension_names':DIMENSIONS,'count':report['count'],
    'source_report_sha256':sha(report_bytes),'source_receipt_sha256':receipt,
    'strategies':rows,'graph_attested':False,'holdout':'SEALED','real':'OFF',
    'oos_verified':False,'maker_fill_verified':False,'private_only':True,
@@ -98,7 +103,9 @@ def main():
  p=argparse.ArgumentParser();p.add_argument('--input',required=True);p.add_argument('--output',required=True);a=p.parse_args()
  output=Path(a.output)
  if output.exists():raise SystemExit('BLOCKED_VECTOR_OVERWRITE')
- d=stage(Path(a.input).read_bytes());output.write_bytes(canonical(d)+b'\n')
+ hour=os.environ.get('RESEARCH_UTC_HOUR')
+ d=stage(Path(a.input).read_bytes(), int(hour) if hour is not None else None)
+ output.write_bytes(canonical(d)+b'\n')
  # No candidate IDs, PnLs or vectors in public job stdout.
  print('PASS_PRIVATE_VECTOR48_STAGE_ONLY',d['count'],d['stage_sha256'])
 if __name__=='__main__':main()
