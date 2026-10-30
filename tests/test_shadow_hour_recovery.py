@@ -30,17 +30,57 @@ class RecoveryUnitTests(unittest.TestCase):
         current = 498152
         self.assertEqual(recovery_window_start(current), 498127)
         covered = set(range(498128, current + 1))
-        self.assertEqual(select_recovery_target(current, covered, set()), 498127)
+        # Old live GAS did not accept 32: don't spend the same compute again.
+        self.assertIsNone(select_recovery_target(current, covered, set()))
+        self.assertEqual(select_recovery_target(current, covered, set(), True), 498127)
         # A byte-verified aggregate+Drive ACK forbids repeated execution.
-        self.assertIsNone(select_recovery_target(current, covered | {498127}, set()))
-        # Any incomplete aggregate must be quarantined; never duplicate it.
-        self.assertIsNone(select_recovery_target(current, covered, {498127}))
+        self.assertIsNone(select_recovery_target(current, covered | {498127}, set(), True))
+        # An incomplete terminal aggregate is quarantined UNTIL live GAS
+        # advertises a compatible version, then retried only on this hour.
+        self.assertIsNone(select_recovery_target(current, covered, {498127}, False))
+        self.assertEqual(select_recovery_target(current, covered, {498127}, True), 498127)
 
     def test_expired_gap_override_does_not_widen_general_lookback(self):
         from tools.shadow_hour_recovery import recovery_window_start, select_recovery_target
         self.assertEqual(recovery_window_start(498126), 498102)
         self.assertEqual(recovery_window_start(498200), 498176)
         self.assertEqual(select_recovery_target(498200, set(), set()), 498176)
+
+    def test_live_receiver_capability_is_required_and_verified(self):
+        from tools.shadow_hour_recovery import receiver_supports_terminal32
+        url = "https://script.google.com/macros/s/AKfycbTest123/exec"
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self, limit):
+                return json.dumps(self.payload).encode()
+        class Opener:
+            def __init__(self, payload):
+                self.payload = payload
+            def open(self, request, timeout):
+                return Response(self.payload)
+        old = {"status": "AVRORA_GAS_PRIVATE_RECEIVER_READY_NO_GET_DATA"}
+        new = {**old, "terminal_32_supported": True}
+        with patch("tools.shadow_hour_recovery.urllib.request.build_opener",
+                   return_value=Opener(old)):
+            self.assertFalse(receiver_supports_terminal32(url))
+        with patch("tools.shadow_hour_recovery.urllib.request.build_opener",
+                   return_value=Opener(new)):
+            self.assertTrue(receiver_supports_terminal32(url))
+        self.assertFalse(receiver_supports_terminal32(
+            "https://script.google.com.evil.example/macros/s/AKfycbTest123/exec"))
+
+    def test_gas_readiness_redirect_is_google_only(self):
+        from tools.shadow_hour_recovery import GoogleAppsScriptRedirect
+        req = urllib.request.Request("https://script.google.com/macros/s/ABC/exec")
+        handler = GoogleAppsScriptRedirect()
+        with self.assertRaises(RecoveryBlocked):
+            handler.redirect_request(req, None, 302, "Found", {},
+                                     "https://example.com/secrets")
 
     def test_missing_hour_is_recovered_before_new_work(self):
         self.assertEqual(select_hour(498052, {498048, 498050, 498051}, set(), lookback=4), 498049)
