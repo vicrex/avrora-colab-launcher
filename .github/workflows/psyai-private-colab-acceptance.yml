@@ -4,17 +4,14 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '41 8 * * *'
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/psyai-private-colab-acceptance.yml'
-      - 'tools/psyai_private_colab_runner.py'
+  # Avoid implicit heavyweight checkout when public launcher files change.
+  # Explicit dispatch and the approved schedule are the only triggers.
 
 permissions:
   contents: read
 
 concurrency:
-  group: psyai-private-colab-acceptance
+  group: psyai-colab-cpu-global-nonparallel
   cancel-in-progress: false
 
 jobs:
