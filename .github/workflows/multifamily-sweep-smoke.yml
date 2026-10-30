@@ -128,7 +128,19 @@ jobs:
             exit 2
           fi
           echo "RESEARCH_UTC_HOUR=$hour" >> "$GITHUB_ENV"
-          echo "SWEEP_HOUR_$hour"
+          epoch=497940
+          space=12000
+          per_batch=64
+          batches=$(( (space + per_batch - 1) / per_batch ))
+          batch=$(( (hour - epoch) % batches ))
+          remaining=$(( space - batch * per_batch ))
+          expected=$(( remaining < per_batch ? remaining : per_batch ))
+          if [[ "$expected" != "64" && "$expected" != "32" ]]; then
+            echo "BLOCKED_SWEEP_UNEXPECTED_BATCH_SIZE"
+            exit 2
+          fi
+          echo "SWEEP_EXPECTED_COUNT=$expected" >> "$GITHUB_ENV"
+          echo "SWEEP_HOUR_$hour EXPECTED_$expected"
       - name: Evaluate 64 REAL P816 discovery-sample cases via private engine
         if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
@@ -152,7 +164,8 @@ jobs:
           set -euo pipefail
           python -m tools.strategy_vector48 \
             --input sweep_private_full.json \
-            --output sweep_private_vector48.json
+            --output sweep_private_vector48.json \
+            --expected-count "$SWEEP_EXPECTED_COUNT"
           test -s sweep_private_vector48.json
       - name: Publish aggregate safety receipt only (no private hypotheses)
         if: ${{ steps.recovery.outputs.status == 'RUN' }}
@@ -162,13 +175,16 @@ jobs:
           import hashlib,json,os,pathlib
           raw=pathlib.Path('sweep_private_full.json').read_bytes()
           obj=json.loads(raw)
+          expected=int(os.environ['SWEEP_EXPECTED_COUNT'])
+          if expected not in (32,64):
+              raise SystemExit('BLOCKED_SWEEP_UNEXPECTED_BATCH_SIZE')
           if (obj.get('schema')!='AVRORA_MULTIFAMILY_SHADOW_SWEEP_V1'
-              or obj.get('count')!=64 or len(obj.get('candidate_ids',[]))!=64
+              or obj.get('count')!=expected or len(obj.get('candidate_ids',[]))!=expected
               or obj.get('real')!='OFF' or obj.get('holdout')!='SEALED'
               or obj.get('oos_proven') is not False or obj.get('fill_proven') is not False):
               raise SystemExit('BLOCKED_SWEEP_REPORT_UNTRUSTED')
           candidate_ids=obj['candidate_ids']
-          if len(set(candidate_ids))!=64:raise SystemExit('BLOCKED_SWEEP_CANDIDATE_COLLISION')
+          if len(set(candidate_ids))!=expected:raise SystemExit('BLOCKED_SWEEP_CANDIDATE_COLLISION')
           complete=obj.copy();digest=complete.pop('receipt_sha256')
           if hashlib.sha256(json.dumps(complete,ensure_ascii=False,sort_keys=True,
                  separators=(',',':'),allow_nan=False).encode()).hexdigest()!=digest:

@@ -34,16 +34,18 @@ def validate_report(payload: bytes) -> tuple[str, str]:
     report = json.loads(payload)
     if not isinstance(report, dict):
         raise ValueError("BLOCKED_PRIVATE_REPORT_SCHEMA")
-    if (report.get("schema") != SCHEMA or report.get("count") != 64
+    count = report.get("count")
+    if (report.get("schema") != SCHEMA or count not in (32, 64)
             or report.get("real") != "OFF" or report.get("holdout") != "SEALED"
             or report.get("oos_proven") is not False
             or report.get("fill_proven") is not False):
         raise ValueError("BLOCKED_PRIVATE_REPORT_UNSAFE")
     models = report.get("models")
     ids = report.get("candidate_ids")
-    if not isinstance(models, list) or not isinstance(ids, list) or len(models) != 64 or len(ids) != 64:
+    if (not isinstance(models, list) or not isinstance(ids, list)
+            or len(models) != count or len(ids) != count):
         raise ValueError("BLOCKED_PRIVATE_REPORT_INCOMPLETE")
-    if len(set(ids)) != 64 or any(not isinstance(i, str) or len(i) != 64 for i in ids):
+    if len(set(ids)) != count or any(not isinstance(i, str) or len(i) != 64 for i in ids):
         raise ValueError("BLOCKED_PRIVATE_REPORT_CANDIDATES")
     if any(not isinstance(m, dict) or m.get("candidate_id") != candidate
            for m, candidate in zip(models, ids)):

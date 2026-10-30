@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from unittest.mock import patch
 
-from tools.shadow_hour_recovery import RecoveryBlocked, read_archive, select_hour, verified_hours, GitHubArtifactRedirect, fetch_bytes, API
+from tools.shadow_hour_recovery import RecoveryBlocked, read_archive, select_hour, verified_hours, GitHubArtifactRedirect, fetch_bytes, API, expected_count
 
 
 def archive(name, obj):
@@ -19,6 +19,11 @@ def archive(name, obj):
 
 
 class RecoveryUnitTests(unittest.TestCase):
+    def test_terminal_frozen_batch_has_32_unique_cases(self):
+        self.assertEqual(expected_count(498126), 64)
+        self.assertEqual(expected_count(498127), 32)
+        self.assertEqual(expected_count(498128), 64)
+
     def test_missing_hour_is_recovered_before_new_work(self):
         self.assertEqual(select_hour(498052, {498048, 498050, 498051}, set(), lookback=4), 498049)
 
