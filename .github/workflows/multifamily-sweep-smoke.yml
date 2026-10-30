@@ -129,7 +129,7 @@ jobs:
           fi
           echo "RESEARCH_UTC_HOUR=$hour" >> "$GITHUB_ENV"
           echo "SWEEP_HOUR_$hour"
-      - name: Evaluate 64 REAL P816 discovery-sample cases via private engine
+      - name: Evaluate bounded P816 discovery-sample cases via private engine
         if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
           set -euo pipefail
@@ -146,7 +146,7 @@ jobs:
       # Calculate PRIVATE 48D vectors for all 64 results before the existing
       # report delivery. Never upload these vectors to public GitHub artifacts.
       # The original verified full report remains the durable Drive source.
-      - name: Stage all 64 private strategy results into vector evidence (no public rows)
+      - name: Stage exact private strategy batch into vector evidence (no public rows)
         if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
           set -euo pipefail
@@ -162,13 +162,15 @@ jobs:
           import hashlib,json,os,pathlib
           raw=pathlib.Path('sweep_private_full.json').read_bytes()
           obj=json.loads(raw)
+          from tools.multifamily_batch_contract import expected_batch_count
+          expected=expected_batch_count(int(os.environ['RESEARCH_UTC_HOUR']))
           if (obj.get('schema')!='AVRORA_MULTIFAMILY_SHADOW_SWEEP_V1'
-              or obj.get('count')!=64 or len(obj.get('candidate_ids',[]))!=64
+              or obj.get('count')!=expected or len(obj.get('candidate_ids',[]))!=expected
               or obj.get('real')!='OFF' or obj.get('holdout')!='SEALED'
               or obj.get('oos_proven') is not False or obj.get('fill_proven') is not False):
               raise SystemExit('BLOCKED_SWEEP_REPORT_UNTRUSTED')
           candidate_ids=obj['candidate_ids']
-          if len(set(candidate_ids))!=64:raise SystemExit('BLOCKED_SWEEP_CANDIDATE_COLLISION')
+          if len(set(candidate_ids))!=expected or len(obj.get('models',[]))!=expected:raise SystemExit('BLOCKED_SWEEP_CANDIDATE_COLLISION')
           complete=obj.copy();digest=complete.pop('receipt_sha256')
           if hashlib.sha256(json.dumps(complete,ensure_ascii=False,sort_keys=True,
                  separators=(',',':'),allow_nan=False).encode()).hexdigest()!=digest:
