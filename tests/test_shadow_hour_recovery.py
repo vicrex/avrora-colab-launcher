@@ -24,6 +24,24 @@ class RecoveryUnitTests(unittest.TestCase):
         self.assertEqual(expected_count(498127), 32)
         self.assertEqual(expected_count(498128), 64)
 
+    def test_expired_known_terminal_gap_is_recovered_once_and_verified(self):
+        from tools.shadow_hour_recovery import recovery_window_start, select_recovery_target
+        # UTC 2026-10-30 08:xx: hour 498127 is outside normal 24h window.
+        current = 498152
+        self.assertEqual(recovery_window_start(current), 498127)
+        covered = set(range(498128, current + 1))
+        self.assertEqual(select_recovery_target(current, covered, set()), 498127)
+        # A byte-verified aggregate+Drive ACK forbids repeated execution.
+        self.assertIsNone(select_recovery_target(current, covered | {498127}, set()))
+        # Any incomplete aggregate must be quarantined; never duplicate it.
+        self.assertIsNone(select_recovery_target(current, covered, {498127}))
+
+    def test_expired_gap_override_does_not_widen_general_lookback(self):
+        from tools.shadow_hour_recovery import recovery_window_start, select_recovery_target
+        self.assertEqual(recovery_window_start(498126), 498102)
+        self.assertEqual(recovery_window_start(498200), 498176)
+        self.assertEqual(select_recovery_target(498200, set(), set()), 498176)
+
     def test_missing_hour_is_recovered_before_new_work(self):
         self.assertEqual(select_hour(498052, {498048, 498050, 498051}, set(), lookback=4), 498049)
 
