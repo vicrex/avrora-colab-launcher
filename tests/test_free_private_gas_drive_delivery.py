@@ -95,6 +95,7 @@ class FreeDriveGasTests(unittest.TestCase):
         self.assertIn("getFilesByName(name)", js)
         self.assertIn("entry.getBlob().getBytes()", js)
         self.assertIn("PASS_PRIVATE_DRIVE_READBACK", js)
+        self.assertIn("terminal_32_supported: true", js)
         self.assertLess(js.index("BLOCKED_INVALID_HMAC"), js.index("folder.createFile("))
         self.assertNotIn("createTrigger(", js)
         self.assertNotIn("ScriptApp.newTrigger(", js)
