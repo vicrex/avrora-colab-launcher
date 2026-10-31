@@ -1,0 +1,55 @@
+name: AVRORA one-shot HAWKES01 six-symbol seven-day original byte audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hawkes-full42-byte-audit-one-shot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: avrora-hawkes-full42-actual-archive-byte-readback
+  cancel-in-progress: false
+
+jobs:
+  audit-42-originals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Offline adversarial source, manifest and artifact ingestion checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_hawkes_seven_day_archive_audit.py' -v
+          python -m unittest discover -s tests -p 'test_hawkes_github_artifact_inventory.py' -v
+          python -m unittest discover -s tests -p 'test_hawkes_github_full42_byte_audit.py' -v
+      - name: Read back 42 real original GitHub Actions archive ZIPs and independently check SHA and gzip CRC
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -m tools.hawkes_github_full42_byte_audit \
+            --asof-utc 2026-10-31 \
+            --out hawkes_2026_10_24_to_30_actual_42_gzip_sha_crc_report.json
+      - name: Save only SHA receipts without copying raw trade events
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-hawkes-actual-42-source-byte-audit-${{ github.run_id }}
+          path: hawkes_2026_10_24_to_30_actual_42_gzip_sha_crc_report.json
+          if-no-files-found: warn
+          retention-days: 7
