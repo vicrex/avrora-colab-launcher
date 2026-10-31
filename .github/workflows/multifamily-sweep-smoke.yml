@@ -175,6 +175,7 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import hashlib,json,os,pathlib
+          from tools.shadow_economic_guard import audit_report
           raw=pathlib.Path('sweep_private_full.json').read_bytes()
           obj=json.loads(raw)
           expected=int(os.environ['SWEEP_EXPECTED_COUNT'])
@@ -187,6 +188,7 @@ jobs:
               raise SystemExit('BLOCKED_SWEEP_REPORT_UNTRUSTED')
           candidate_ids=obj['candidate_ids']
           if len(set(candidate_ids))!=expected:raise SystemExit('BLOCKED_SWEEP_CANDIDATE_COLLISION')
+          cost_frequency_guard=audit_report(obj,expected)
           complete=obj.copy();digest=complete.pop('receipt_sha256')
           if hashlib.sha256(json.dumps(complete,ensure_ascii=False,sort_keys=True,
                  separators=(',',':'),allow_nan=False).encode()).hexdigest()!=digest:
@@ -209,6 +211,7 @@ jobs:
             'family_count':6,'long_short':True,
             'train_and_validation_positive':obj['summaries']['train_and_validation_positive'],
             'min_validation_trades_30':obj['summaries']['min_validation_trades_30'],
+            'historical_cost_frequency_guard':cost_frequency_guard,
             'check2':'NOT_INDEPENDENTLY_RECONSTRUCTED',
             'status':'RESEARCH_MODELLED_DISCOVERY_ONLY',
             'real':'OFF','holdout':'SEALED','oos':False,'maker_fill_proven':False,
