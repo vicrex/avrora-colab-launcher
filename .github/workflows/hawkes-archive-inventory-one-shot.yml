@@ -1,0 +1,51 @@
+name: AVRORA one-shot HAWKES01 real official-archive metadata inventory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hawkes-archive-inventory-one-shot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: avrora-hawkes-official-archive-inventory
+  cancel-in-progress: false
+
+jobs:
+  metadata-only-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify offline archived-source and artifact provenance guards
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_hawkes_seven_day_archive_audit.py' -v
+          python -m unittest discover -s tests -p 'test_hawkes_github_artifact_inventory.py' -v
+      - name: Read actual GitHub artifact names using existing Actions read-only token
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python -m tools.hawkes_github_artifact_inventory \
+            --asof-utc "$(date -u +%F)" --out hawkes_official_archive_metadata_status.json
+      - name: Preserve aggregate SHA-only inventory report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-hawkes-42-archive-metadata-inventory-${{ github.run_id }}
+          path: hawkes_official_archive_metadata_status.json
+          retention-days: 7
+          if-no-files-found: warn
