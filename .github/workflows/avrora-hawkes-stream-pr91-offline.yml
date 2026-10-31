@@ -1,0 +1,66 @@
+name: AVRORA one-shot exact HAWKES01 streaming private offline verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/avrora-hawkes-stream-pr91-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-private-hawkes-stream-pr91-offline
+  cancel-in-progress: false
+
+jobs:
+  read-only-private-math-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PRIVATE_HEAD: df29f04d75915f78ea1b711c473d00484ddca084
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Require existing read-only private source deploy key
+        env:
+          HAS_READONLY_KEY: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$HAS_READONLY_KEY" != 'true' ]]; then
+            echo 'BLOCKED_EXISTING_PRIVATE_CODE_READONLY_KEY_UNAVAILABLE'
+            exit 2
+          fi
+      - name: Checkout exactly the PR91 private source immutable head
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: df29f04d75915f78ea1b711c473d00484ddca084
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline 250k-plus non-discard trace + baseline MLE parity and causality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C private_code rev-parse HEAD)" = "$PRIVATE_HEAD"
+          cd private_code
+          python -m unittest research.strategy_search.test_hawkes01_fit research.strategy_search.test_hawkes01_fit_stream -v
+          echo "PASS_PRIVATE_HAWKES_STREAMING_EXACT_PARITY_${{ matrix.os }}"
+      - name: Remove private checkout and large temporary traces
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf private_code
