@@ -41,11 +41,65 @@ jobs:
           set -euo pipefail
           python -m tools.hawkes_github_artifact_inventory \
             --asof-utc "$(date -u +%F)" --out hawkes_official_archive_metadata_status.json
-      - name: Preserve aggregate SHA-only inventory report
+      - name: Independently test archived Bybit trade event parser
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_bybit_trade_event_qc.py' -v
+      - name: Confirm all seven-day six-symbol artifact names arrived
+        run: |
+          python - <<'PY'
+          import json
+          r=json.load(open('hawkes_official_archive_metadata_status.json'))
+          if r['status']!='METADATA_42_PRESENT_BYTES_UNVERIFIED' or r['found_symbol_day_pairs_with_unexpired_artifacts']!=42:
+              raise SystemExit('BLOCKED_SOURCE_METADATA_42_NOT_COMPLETE')
+          print('PASS_ARCHIVE_METADATA_42_42_NAMES_ONLY',r['receipt_sha256'])
+          PY
+      - name: Independent actual LINKUSDT 30-Oct exchange event ID and time QC
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api repos/vicrex/avrora-colab-launcher/actions/artifacts/13043072139/zip > "$RUNNER_TEMP/bybit_link_source.zip"
+          mkdir -p "$RUNNER_TEMP/bybit_link_archive"
+          python - <<'PY'
+          from pathlib import Path
+          import os,zipfile
+          p=Path(os.environ['RUNNER_TEMP'])
+          with zipfile.ZipFile(p/'bybit_link_source.zip') as z:
+              if set(z.namelist())!={'manifest.json','LINKUSDT2026-10-30.csv.gz'}:
+                  raise SystemExit('BLOCKED_UNTRUSTED_ARCHIVE_ARTIFACT_SHAPE')
+              for name in z.namelist():
+                  (p/'bybit_link_archive'/name).write_bytes(z.read(name))
+          PY
+          python -m tools.bybit_trade_event_qc --root "$RUNNER_TEMP/bybit_link_archive" --symbol LINKUSDT --day 2026-10-30 --out hawkes_link_2026_10_30_event_receipt.json
+          python - <<'PY'
+          import json
+          a=json.load(open('hawkes_link_2026_10_30_event_receipt.json'))
+          if (a['status']!='PASS_HISTORICAL_EVENT_STRUCTURAL_QC'
+              or a['observed_trade_rows']!=340093
+              or a['unique_trade_ids']!=340093
+              or a['hours_with_at_least_one_event']!=24
+              or a['source_gz_sha256']!='0d6b5e382d7679da6d7d1ddb4e0f394cba42db5e4966ab8d1822e7d106dcf163'
+              or a['receipt_sha256']!='d2e0148a70d3048b0a9e748688bb23ddd6047d330503ec81648b192579eaef13'
+              or a['individual_historical_first_seen_receipt_proven'] is not False
+              or a['hawkes_real_time_calibration_authorized'] is not False):
+              raise SystemExit('BLOCKED_LINK_REAL_QC_INDEPENDENT_PARITY')
+          print('PASS_REAL_LINK_EVENT_QC_SHA_PARITY',a['receipt_sha256'])
+          PY
+      - name: Preserve aggregate SHA receipts only
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: avrora-hawkes-42-archive-metadata-inventory-${{ github.run_id }}
-          path: hawkes_official_archive_metadata_status.json
+          name: avrora-hawkes-42-metadata-link-actual-qc-${{ github.run_id }}
+          path: |
+            hawkes_official_archive_metadata_status.json
+            hawkes_link_2026_10_30_event_receipt.json
           retention-days: 7
           if-no-files-found: warn
+      - name: Remove all archived event source bytes
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/bybit_link_archive"
+          rm -f "$RUNNER_TEMP/bybit_link_source.zip"
