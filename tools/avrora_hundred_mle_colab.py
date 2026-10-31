@@ -1,4 +1,4 @@
-"""100 distinct exact private HAWKES01 seven-day double-start MLE fits in Colab.
+"""100 distinct exact private HAWKES01 seven-day double-start MLE fits: real temporal bursts.
 
 Standalone runner executes ONLY source from an immutable, runner-built zip.
 One actual remote Colab CPU execution holds 100 separate MLE research cases;
@@ -59,9 +59,19 @@ def build_case(index, f):
     data = []
     for d in range(7):
         for j in range(size):
-            timestamp = start + d * f.DAY_MS + (j + 1) * f.DAY_MS // (size + 2)
-            if index % 4 == 0 and j % 5 == 4:
-                timestamp = data[-1]["event_ms"]
+            if regime == "DIRECTIONAL_BURST":
+                # Independent null vs *temporal* burst: genuine 1.8s spacing,
+                # two 30s clusters every UTC day, well inside fixed 60s half-life.
+                first_count = size // 2
+                group = 0 if j < first_count else 1
+                within = j if group == 0 else j - first_count
+                timestamp = (start + d * f.DAY_MS
+                             + (6 if group == 0 else 18) * 3600000
+                             + within * 1800)
+            else:
+                timestamp = start + d * f.DAY_MS + (j + 1) * f.DAY_MS // (size + 2)
+                if index % 4 == 0 and j % 5 == 4:
+                    timestamp = data[-1]["event_ms"]
             draw = next(rng) % 100
             probability = (50 if regime == "BALANCED_NULL"
                            else (80 if burst_side == 0 else 20))
@@ -149,6 +159,7 @@ def run(bundle):
                     "math_status": status,
                     "oracle_vs_cached_report_sha": baseline["content_sha256"],
                 }
+                c["nontrivial_em_iterations"] = any(x > 2 for x in c["iterations"])
                 if any(x < 0 or x > f.MAX_ITER for x in c["iterations"]):
                     raise ValueError("BLOCKED_COLAB_MLE_ITERATION_COUNT")
                 signature.update(canonical(c))
@@ -160,6 +171,12 @@ def run(bundle):
                     del sys.modules[module]
     if len(cases) != CASE_COUNT or sum(statuses.values()) != CASE_COUNT:
         raise ValueError("BLOCKED_COLAB_MLE_RUN_COUNT")
+    burst_nontrivial = sum(
+        c["nontrivial_em_iterations"]
+        for c in cases if c["regime"] == "DIRECTIONAL_BURST"
+    )
+    if burst_nontrivial < 40:
+        raise ValueError("BLOCKED_COLAB_MLE_WEAK_TEMPORAL_BURSTS")
     if {case["symbol"] for case in cases} != set(SYMBOLS):
         raise ValueError("BLOCKED_COLAB_MLE_SYMBOL_COVERAGE")
     report = {
@@ -174,6 +191,8 @@ def run(bundle):
         "future_time_rejections": CASE_COUNT,
         "cases_by_symbol": {sym: sum(c["symbol"] == sym for c in cases)
                             for sym in SYMBOLS},
+        "temporal_burst_cases": 50,
+        "temporal_burst_cases_with_gt2_iterations": burst_nontrivial,
         "statuses": statuses,
         "case_signature_sha256": signature.hexdigest(),
         "cases": cases,
