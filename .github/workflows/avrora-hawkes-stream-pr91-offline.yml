@@ -1,4 +1,4 @@
-name: AVRORA one-shot 1302223 event exact HAWKES streaming stress after merge
+name: AVRORA one-shot exact cached EM math and 1302223 streaming regression
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_HEAD: ce104e4c077952575e2e76a3836ad1338cf6b761
+      PRIVATE_HEAD: f91f6e779a1c561a0abb691e5e27ea3d84bc5f12
       PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - name: Require existing read-only private source deploy key
@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: ce104e4c077952575e2e76a3836ad1338cf6b761
+          ref: f91f6e779a1c561a0abb691e5e27ea3d84bc5f12
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           test "$(git -C private_code rev-parse HEAD)" = "$PRIVATE_HEAD"
           cd private_code
-          python -m unittest research.strategy_search.test_hawkes01_fit research.strategy_search.test_hawkes01_fit_stream -v
+          python -m unittest research.strategy_search.test_hawkes01_fit research.strategy_search.test_hawkes01_fit_stream research.strategy_search.test_hawkes01_em_reuse -v
           echo "PASS_PRIVATE_HAWKES_STREAMING_EXACT_PARITY_${{ matrix.os }}"
       - name: Actual runner CPU and disk stress on >LINK-seven-day non-discard synthetic event stream
         shell: bash
