@@ -1,0 +1,82 @@
+name: AVRORA one-shot six-symbol public first-observed trade and L2 market-source probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/avrora-public-firstseen-one-shot.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-public-first-observed-market-data-one-shot
+  cancel-in-progress: false
+
+jobs:
+  public-observation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Offline firstseen clock, topic and payload safety tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_avrora_public_market_firstseen_probe.py' -v
+      - name: Install minimum bounded public WebSocket receive library
+        shell: bash
+        run: python -m pip install -q --disable-pip-version-check 'websockets>=14,<16'
+      - name: Observe Bybit six USDT linear public trades and L2 for 45 seconds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.avrora_public_market_firstseen_probe --seconds 45 \
+            --out-dir firstseen_probe
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          p=Path('firstseen_probe/probe_receipt.json')
+          x=json.loads(p.read_bytes())
+          sha=x.pop('receipt_sha256')
+          source=Path('firstseen_probe/observed_ws_frames.jsonl.gz')
+          assert hashlib.sha256(source.read_bytes()).hexdigest()==x['compressed_source_sha256']
+          assert hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':'),
+                 ensure_ascii=False,allow_nan=False).encode()).hexdigest()==sha
+          assert set(x['observed_unique_trades'])==set(x['symbols'])
+          assert set(x['observed_l2_snapshots'])==set(x['symbols'])
+          assert not any(x[y] for y in (
+              'continuous_seven_day_coverage_proven',
+              'no_market_feed_gaps_proven',
+              'maker_queue_priority_proven',
+              'any_fills_proven',
+              'independent_check2',
+              'oos_proven',
+              'strategy_net_profit_proven',
+              'live_trading_authorized'))
+          print('PASS_ACTUAL_FIRST_OBSERVED_6x_TRADES_L2_SHAS_NO_STRATEGY_CLAIM',sha)
+          PY
+      - name: Persist original public first-observed raw frames with matching receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-six-public-first-observed-short-probe-${{ github.run_id }}
+          path: |
+            firstseen_probe/observed_ws_frames.jsonl.gz
+            firstseen_probe/probe_receipt.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Remove temporary public market data from runner
+        if: ${{ always() }}
+        shell: bash
+        run: rm -rf firstseen_probe
