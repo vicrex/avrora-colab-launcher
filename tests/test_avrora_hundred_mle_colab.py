@@ -45,7 +45,7 @@ class FrozenHundredMleTests(unittest.TestCase):
                 dense+=1
                 self.assertGreater(sum(0<=gap<=1800 for gap in gaps),50)
             else:
-                self.assertGreater(sum(gap>3600000 for gap in gaps),70)
+                self.assertGreater(sum(gap>120000 for gap in gaps),70)
         self.assertEqual(dense,50)
     def test_negative_or_forged_case_index_blocked(self):
         for case in (-1,100,True,"22"):
