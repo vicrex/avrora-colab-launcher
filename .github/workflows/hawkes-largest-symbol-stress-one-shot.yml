@@ -1,0 +1,150 @@
+name: AVRORA one-shot ETH seven-day size exact HAWKES streaming stress
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hawkes-largest-symbol-stress-one-shot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-hawkes-largest-symbol-size-one-shot
+  cancel-in-progress: false
+
+jobs:
+  real-runner-large-synthetic-stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PRIVATE_CODE_SHA: ce104e4c077952575e2e76a3836ad1338cf6b761
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Verify existing read-only credential; no new auth
+        shell: bash
+        env:
+          READONLY_AVAILABLE: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$READONLY_AVAILABLE" != "true" ]]; then
+            echo BLOCKED_READONLY_SOURCE_KEY_MISSING
+            exit 2
+          fi
+      - name: Checkout frozen merged private HAWKES implementation with existing read-only key
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: ce104e4c077952575e2e76a3836ad1338cf6b761
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Exact 11,795,367 synthetic trade events; real RSS and disk accounting
+        shell: bash
+        working-directory: private_code
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PRIVATE_CODE_SHA"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+          import resource
+          import shutil
+          import tempfile
+          import time
+          from research.strategy_search import hawkes01_fit as f
+          from research.strategy_search import hawkes01_fit_stream as stream
+
+          # Exactly the verified historical ETH seven-day row count, but this
+          # input is wholly SYNTHETIC with synthetic first-seen equal to event.
+          # Never treat it as real archived market receipts or as an OOS test.
+          N = 11_795_367
+          ASOF = 20_000 * f.DAY_MS
+          WINDOW = 7 * f.DAY_MS
+          START = ASOF - WINDOW
+          scratch_root = os.environ['RUNNER_TEMP']
+          available_start = shutil.disk_usage(scratch_root).free
+          if available_start < 3 * 1024**3:
+              raise SystemExit('BLOCKED_HAWKES_STRESS_INSUFFICIENT_DISK')
+
+          def event_generator():
+              for i in range(N):
+                  ms = START + (i * (WINDOW - 1)) // N
+                  yield {
+                      'trade_id':str(i),'event_ms':ms,'received_ms':ms,
+                      'aggressor':'BUY' if i % 2 else 'SELL',
+                  }
+
+          start = time.perf_counter()
+          with tempfile.TemporaryDirectory(prefix='avrora_eth_7d_stress_',
+                                           dir=scratch_root) as tmp:
+              with stream.prepared(event_generator(), ASOF, tmp) as (
+                  trace, exposure, side_counts, row_count
+              ):
+                  # Both scans are independent; full spool round-trip.
+                  scan1 = sum(a + b for a,b,_,_ in trace)
+                  scan2 = sum(a + b for a,b,_,_ in trace)
+                  groups = trace.group_count
+                  disk_spool = trace.path.stat().st_size
+                  assert row_count == scan1 == scan2 == sum(side_counts) == N
+                  assert groups == N, 'each generated event time is unique'
+                  assert disk_spool == groups * stream.FORMAT.size
+                  assert all(x > 0 for x in exposure)
+                  # Distinct id uniqueness has been enforced by the same
+                  # SQLite UNIQUE PRIMARY KEY as production stream mode.
+              assert list(Path(tmp).iterdir()) == [], 'temporary files leaked'
+          elapsed = time.perf_counter() - start
+          peak_rss_bytes = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024
+          remaining_disk = shutil.disk_usage(scratch_root).free
+          if peak_rss_bytes > 768 * 1024**2:
+              raise SystemExit('BLOCKED_HAWKES_STRESS_PEAK_PROCESS_RSS')
+          assert remaining_disk > available_start - 512 * 1024**2
+          report = {
+              'schema':'AVRORA_HAWKES_ETH_VOLUME_SYNTHETIC_STREAM_STRESS_V1',
+              'private_source_sha':'ce104e4c077952575e2e76a3836ad1338cf6b761',
+              'status':'PASS_SYNTHETIC_ETH_VOLUME_STREAM_NONTRUNCATION',
+              'synthetic_trade_events':N,
+              'unique_event_ids_validated':row_count,
+              'first_and_second_disk_scan_events':[scan1,scan2],
+              'observed_exact_time_groups':groups,
+              'source_memory_limit_events_old':f.MAX_EVENTS,
+              'spool_bytes':disk_spool,
+              'wall_seconds':round(elapsed,3),
+              'max_process_rss_bytes':peak_rss_bytes,
+              'scratch_removed':True,
+              'real_market_event_receipts_present':False,
+              'provider_complete_feed_proven':False,
+              'first_seen_proven':False,'hawkes_market_fit_proven':False,
+              'independent_check2':False,'maker_fill_proven':False,
+              'prospective_oos_proven':False,'live_trading_authorized':False,
+              'real':'OFF','holdout':'SEALED',
+          }
+          body=json.dumps(report,sort_keys=True,separators=(',',':'),allow_nan=False)
+          report['receipt_sha256']=hashlib.sha256(body.encode()).hexdigest()
+          Path(os.environ['RUNNER_TEMP'],'hawkes_eth_volume_synthetic_receipt.json').write_text(
+              json.dumps(report,sort_keys=True,indent=2)+'\n')
+          print('PASS_ETH_11795367_SYNTHETIC_NONTRUNCATION', json.dumps(report,sort_keys=True))
+          PY
+      - name: Save compact stress metrics only; never original trade data
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-hawkes-eth-volume-stress-${{ github.run_id }}
+          path: ${{ runner.temp }}/hawkes_eth_volume_synthetic_receipt.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Delete private source checkout
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf private_code
