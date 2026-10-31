@@ -31,6 +31,9 @@ def parse(text):
         not isinstance(cases,list) or len(cases)!=CASE_COUNT or
         obj.get("completed_seven_day_mle_runs")!=CASE_COUNT or
         obj.get("total_mle_starts")!=2*CASE_COUNT or
+        obj.get("temporal_burst_cases")!=50 or
+        type(obj.get("temporal_burst_cases_with_gt2_iterations")) is not int or
+        not 40<=obj["temporal_burst_cases_with_gt2_iterations"]<=50 or
         obj.get("two_frozen_initializations_per_run") is not True or
         obj.get("original_vs_cached_exact_parity_runs")!=CASE_COUNT or
         obj.get("future_time_rejections")!=CASE_COUNT or
@@ -63,10 +66,14 @@ def parse(text):
                 or len(case["iterations"])!=2
                 or any(type(x)!=int or not 1<=x<=400 for x in case["iterations"])
                 or type(case.get("loglik"))!=list or len(case["loglik"])!=2
+                or case.get("nontrivial_em_iterations") is not any(x>2 for x in case["iterations"])
                 or type(case.get("grouped_event_times"))!=int
                 or not 1<=case["grouped_event_times"]<=case["input_events"]):
             raise ValueError("BLOCKED_MLE_COLAB_CASE_DETAILS")
         signature.update(canonical(case))
+    if (sum(case["nontrivial_em_iterations"] for case in cases if case["regime"]=="DIRECTIONAL_BURST")
+            !=obj["temporal_burst_cases_with_gt2_iterations"]):
+        raise ValueError("BLOCKED_MLE_COLAB_TEMPORAL_BURST_TRUTH")
     if (signature.hexdigest()!=obj.get("case_signature_sha256")
             or sum(case["math_status"]=="NUMERIC_DOUBLE_START_CONVERGED" for case in cases)!=status["NUMERIC_DOUBLE_START_CONVERGED"]
             or any(sum(case["symbol"]==s for case in cases)!=per_symbol[s] for s in SYMBOLS)):

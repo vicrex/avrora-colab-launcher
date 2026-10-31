@@ -1,4 +1,4 @@
-name: AVRORA one-shot 100 genuine private HAWKES MLE experiments in Colab CPU
+name: AVRORA one-shot 100 HAWKES private MLE real temporal burst scenarios in Colab CPU
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: avrora-hundred-mle-colab-one-shot
+  group: avrora-hundred-mle-temporal-burst-one-shot
   cancel-in-progress: false
 
 jobs:
@@ -84,12 +84,12 @@ jobs:
           fi
           python -m tools.verify_hundred_mle_colab verify remote_hundred_mle.log remote_hundred_mle_receipt.json
           python -m tools.verify_hundred_mle_colab compare local_hundred_mle_receipt.json remote_hundred_mle_receipt.json
-          echo "PASS_REAL_COLAB_100_SEVEN_DAY_DOUBLE_START_PRIVATE_MLE_MATH_ONLY"
+          echo "PASS_REAL_COLAB_100_MLE_WITH_50_NONTRIVIAL_TEMPORAL_BURST_CASES"
       - name: Publish only 100 case SHA and aggregate status receipts
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: avrora-colab-hundred-real-private-mle-math-receipts-${{ github.run_id }}
+          name: avrora-colab-100-temporal-burst-private-mle-receipts-${{ github.run_id }}
           path: |
             local_hundred_mle_receipt.json
             remote_hundred_mle_receipt.json
