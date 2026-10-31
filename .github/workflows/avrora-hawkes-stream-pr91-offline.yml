@@ -1,4 +1,4 @@
-name: AVRORA one-shot exact HAWKES01 streaming private offline verification
+name: AVRORA one-shot 1302223 event exact HAWKES streaming stress after merge
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_HEAD: df29f04d75915f78ea1b711c473d00484ddca084
+      PRIVATE_HEAD: ce104e4c077952575e2e76a3836ad1338cf6b761
       PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - name: Require existing read-only private source deploy key
@@ -38,11 +38,11 @@ jobs:
             echo 'BLOCKED_EXISTING_PRIVATE_CODE_READONLY_KEY_UNAVAILABLE'
             exit 2
           fi
-      - name: Checkout exactly the PR91 private source immutable head
+      - name: Checkout immutable verified private source after PR91 merge
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: df29f04d75915f78ea1b711c473d00484ddca084
+          ref: ce104e4c077952575e2e76a3836ad1338cf6b761
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -59,6 +59,74 @@ jobs:
           cd private_code
           python -m unittest research.strategy_search.test_hawkes01_fit research.strategy_search.test_hawkes01_fit_stream -v
           echo "PASS_PRIVATE_HAWKES_STREAMING_EXACT_PARITY_${{ matrix.os }}"
+      - name: Actual runner CPU and disk stress on >LINK-seven-day non-discard synthetic event stream
+        shell: bash
+        working-directory: private_code
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os, tempfile, time, tracemalloc
+          from research.strategy_search import hawkes01_fit as f
+          from research.strategy_search import hawkes01_fit_stream as stream
+
+          # 1,302,223 is the exact verified number of LINK source rows
+          # across 24-30 Oct 2026. This fixture is SYNTHETIC, not market
+          # first-seen, and no actual archive is loaded or treated as causal.
+          N = 1_302_223
+          ASOF = 20_000 * f.DAY_MS
+          START = ASOF - 7 * f.DAY_MS
+
+          def generator():
+              for i in range(N):
+                  ms = START + (i * (7 * f.DAY_MS - 1)) // N
+                  yield {
+                      'trade_id': str(i), 'event_ms': ms,
+                      'received_ms': ms,
+                      'aggressor': 'BUY' if i % 2 else 'SELL',
+                  }
+
+          start = time.perf_counter()
+          tracemalloc.start()
+          # Force runner-owned scratch directory, delete all raw data on exit.
+          with tempfile.TemporaryDirectory(prefix="avrora_hawkes_stress_",
+                                           dir=os.environ['RUNNER_TEMP']) as d:
+              with stream.prepared(generator(), ASOF, d) as (trace, exp, counts, rows):
+                  tally = sum((a+b) for a,b,_,_ in trace)
+                  spool_size = trace.path.stat().st_size
+                  observed_groups = trace.group_count
+                  assert rows == tally == sum(counts) == N
+                  assert min(counts) >= 7
+                  assert observed_groups > f.MAX_EVENTS
+                  assert spool_size == observed_groups * stream.FORMAT.size
+                  assert len(exp) == 2 and all(v > 0 for v in exp)
+              assert not list(Path(d).iterdir()), 'scratch leaked'
+          current, peak = tracemalloc.get_traced_memory()
+          tracemalloc.stop()
+          elapsed = time.perf_counter() - start
+          # Bound Python allocations; platform RSS and filesystem cache are
+          # separate, so this is NOT a machine-wide memory peak claim.
+          assert peak < 128 * 1024 * 1024, 'BLOCKED_STREAM_PYTHON_HEAP_CAP'
+          receipt = {
+              'schema': 'AVRORA_HAWKES_STREAM_STRESS_SYNTHETIC_V1',
+              'input_synthetic_events': N,
+              'validated_trade_ids': rows,
+              'replayed_exact_group_count': observed_groups,
+              'replayed_event_total': tally,
+              'source_original_max_events': f.MAX_EVENTS,
+              'disk_spool_bytes': spool_size,
+              'tracemalloc_python_peak_bytes': peak,
+              'elapsed_seconds': round(elapsed, 3),
+              'real_market_data': False,
+              'individual_first_seen_proven': False,
+              'maker_fill_proven': False,
+              'independent_check2': False,
+              'model_eligible_for_trade': False,
+              'real':'OFF', 'holdout':'SEALED',
+          }
+          print('PASS_HAWKES_SYNTHETIC_1302223_NONDROP_STRESS',
+                json.dumps(receipt, sort_keys=True))
+          PY
       - name: Remove private checkout and large temporary traces
         if: ${{ always() }}
         shell: bash
