@@ -22,7 +22,7 @@ def archive(root,symbol,day,number):
              +b"123,"+symbol.encode()+b",Buy,1,123\n")
     zipped_gz=gzip.compress(payload,mtime=0)
     when=datetime.combine(day+timedelta(days=1),datetime.min.time(),
-                          tzinfo=timezone.utc).isoformat().replace("+00:00","Z")
+                          tzinfo=timezone.utc).replace(hour=12).isoformat().replace("+00:00","Z")
     name=t.archive_filename(day,symbol)
     m={
         "schema":"AVRORA_BYBIT_STATIC_TRADES_TRANSPORT_V2",
