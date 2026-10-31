@@ -1,0 +1,103 @@
+name: AVRORA one-shot 1000 retrospective six-symbol net economics checks in Colab
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/avrora-profit1000-colab-one-shot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-profit1000-reuse-real-full13-one-shot
+  cancel-in-progress: false
+
+jobs:
+  real-m15-frozen-parent-1000:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Adversarial offline cost, week and SHA verification tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_avrora_profit1000_full13.py' -v
+      - name: Verify existing (not newly issued) READ-ONLY Full13 and Colab credentials
+        shell: bash
+        env:
+          HAVE_PRIVATE: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+          HAVE_COLAB_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+          PINNED_PRIVATE_SHA: ${{ vars.AVRORA_FULL13_SOURCE_SHA }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAVE_PRIVATE" != true || "$HAVE_COLAB_ADC" != true || ! "$PINNED_PRIVATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo BLOCKED_EXISTING_PINNED_PRIVATE_SOURCE_OR_COLAB_AUTH
+            exit 2
+          fi
+      - name: Checkout immutable private FULL13 P816 read-only source
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: ${{ vars.AVRORA_FULL13_SOURCE_SHA }}
+          path: private_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Verify exact real history source and build temporary standalone Colab study
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C private_source rev-parse HEAD)" = "${{ vars.AVRORA_FULL13_SOURCE_SHA }}"
+          python -m tools.build_profit1000_remote --private-checkout private_source --out ephemeral_profit1000_colab.py
+          python -m py_compile ephemeral_profit1000_colab.py
+      - name: Execute 1000 cost-aware retrospective samples locally; verify whole reference ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.avrora_profit1000_full13 local --private-checkout private_source > local_profit1000.log
+          python -m tools.verify_profit1000_colab verify local_profit1000.log local_profit1000_receipt.json
+      - name: Reuse only existing Google Colab ADC
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Run 1000 week stress trials on real historical OHLC inside actual Colab CPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install -q --disable-pip-version-check 'google-colab-cli==0.7.4'
+          if ! colab --auth=adc run ephemeral_profit1000_colab.py > remote_profit1000.log 2>&1; then
+            echo BLOCKED_PROFIT1000_COLAB_REMOTE_EXECUTION
+            exit 3
+          fi
+          python -m tools.verify_profit1000_colab verify remote_profit1000.log remote_profit1000_receipt.json
+          python -m tools.verify_profit1000_colab compare local_profit1000_receipt.json remote_profit1000_receipt.json
+          echo PASS_COLAB_1000_REAL_HISTORICAL_M15_WEEK_RESAMPLES_NO_LIVE_FILL_CLAIM
+      - name: Upload only aggregate source/cost/resampling SHA receipts, not private dataset
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-profit1000-real-m15-aggregate-${{ github.run_id }}
+          path: |
+            local_profit1000_receipt.json
+            remote_profit1000_receipt.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove temporary private data, packaged Colab job and credential files
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf private_source ephemeral_profit1000_colab.py local_profit1000.log remote_profit1000.log
+          if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then rm -f "$GOOGLE_APPLICATION_CREDENTIALS"; fi
