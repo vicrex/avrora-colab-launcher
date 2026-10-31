@@ -143,7 +143,7 @@ jobs:
           fi
           echo "SWEEP_EXPECTED_COUNT=$expected" >> "$GITHUB_ENV"
           echo "SWEEP_HOUR_$hour EXPECTED_$expected"
-      - name: Evaluate 64 REAL P816 discovery-sample cases via private engine
+      - name: Evaluate frozen P816 discovery sample (64 ordinary or terminal 32 cases)
         if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
           set -euo pipefail
@@ -157,10 +157,10 @@ jobs:
             exit 4
           fi
           echo 'PASS_REAL_P816_DISCOVERY_SHADOW_SWEEP_NO_MAKER_FILL'
-      # Calculate PRIVATE 48D vectors for all 64 results before the existing
+      # Calculate PRIVATE 48D vectors for all frozen 32/64 results before the existing
       # report delivery. Never upload these vectors to public GitHub artifacts.
       # The original verified full report remains the durable Drive source.
-      - name: Stage all 64 private strategy results into vector evidence (no public rows)
+      - name: Stage all frozen 32 or 64 private strategy results into vector evidence (no public rows)
         if: ${{ steps.recovery.outputs.status == 'RUN' }}
         run: |
           set -euo pipefail
