@@ -38,16 +38,31 @@ class ArchiveDaySelectorTests(unittest.TestCase):
     def test_oct26_only_three_eligible_days(self):
         selected = self.pick(26, 5)
         self.assertEqual(selected["window_days"], 3)
-        self.assertEqual(selected["lag"], 3)
-        self.assertEqual(selected["day"], "2026-10-23")
+        self.assertEqual(selected["lag"], 2)
+        self.assertEqual(selected["day"], "2026-10-24")
         self.assertEqual(self.pick(26, 6)["day"], "2026-10-25")
-        self.assertEqual(self.pick(26, 7)["day"], "2026-10-24")
+        self.assertEqual(self.pick(26, 7)["day"], "2026-10-23")
 
-    def test_after_startup_capped_at_seven_days(self):
+    def test_yesterday_prioritized_twelve_times_with_existing_hourly_clock(self):
+        for hour in range(0, 24, 2):
+            with self.subTest(hour=hour):
+                x = self.pick(31, hour)
+                self.assertEqual(x["window_days"], MAX_BACKFILL_DAYS)
+                self.assertEqual(x["lag"], 1)
+                self.assertEqual(x["day"], "2026-10-30")
+
+    def test_older_six_covered_fairly_without_starvation(self):
+        days = [self.pick(31, hour)["day"] for hour in range(1, 24, 2)]
+        self.assertEqual(set(days), {
+            "2026-10-24", "2026-10-25", "2026-10-26",
+            "2026-10-27", "2026-10-28", "2026-10-29",
+        })
+        from collections import Counter
+        self.assertTrue(all(n == 2 for n in Counter(days).values()))
         x = self.pick(31, 13)
         self.assertEqual(x["window_days"], MAX_BACKFILL_DAYS)
-        self.assertEqual(x["lag"], 13 % 7 + 1)
-        self.assertEqual(x["day"], "2026-10-24")
+        self.assertEqual(x["lag"], 2)
+        self.assertEqual(x["day"], "2026-10-29")
         self.assertGreaterEqual(datetime.fromisoformat(x["day"]).date(),
                                 FIRST_ARCHIVE_DAY)
 
