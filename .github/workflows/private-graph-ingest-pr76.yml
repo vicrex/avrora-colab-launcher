@@ -25,7 +25,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_CODE_SHA: 2c731f77a4107bbc287768400909eab16bdcfda4
+      PRIVATE_CODE_SHA: 28535701a95cf8130263331cd7c4a4c303eaea6a
     steps:
       - name: Verify read-only private source credential
         shell: bash
@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: 2c731f77a4107bbc287768400909eab16bdcfda4
+          ref: 28535701a95cf8130263331cd7c4a4c303eaea6a
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
