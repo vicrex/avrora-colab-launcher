@@ -1,9 +1,10 @@
 """Select only completed, causally frozen Bybit source days for the existing hourly job.
 
 The official six-symbol archive collector first began at 2026-10-23 UTC.
-A rigid modulo-seven clock before 2026-10-30 wastes hours attempting dates
-before the supported collection window. This pure selector changes no timer,
-network, data, strategy, trading or permissions.
+The UTC clock gives priority to yesterday on even hours and fairly
+rotates earlier (up to six) days on odd hours. Captured symbol-days are
+already deduplicated by the existing GitHub Actions cache. This pure
+selector changes no timer, network, data, strategy, trading or permissions.
 """
 from __future__ import annotations
 
@@ -29,7 +30,16 @@ def select_utc_archive_day(now: datetime) -> dict[str, object]:
             "window_days": 0,
         }
     window = min(MAX_BACKFILL_DAYS, elapsed_completed_days)
-    lag = (utc_now.hour % window) + 1
+    # Every even UTC hour checks the newest *completed* archive day;
+    # after publication the existing per-symbol cache prevents redownload.
+    # Every odd UTC hour rotates fairly over older six days. No new jobs,
+    # external requests, cron, source/date expansion or credentials.
+    if window == 1:
+        lag = 1
+    elif utc_now.hour % 2 == 0:
+        lag = 1
+    else:
+        lag = 2 + (utc_now.hour // 2) % (window - 1)
     chosen = utc_now.date() - timedelta(days=lag)
     if chosen < FIRST_ARCHIVE_DAY or chosen >= utc_now.date():
         raise ValueError("BLOCKED_SOURCE_DAY_OUT_OF_RANGE")
