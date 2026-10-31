@@ -1,0 +1,101 @@
+name: AVRORA one-shot 100 genuine private HAWKES MLE experiments in Colab CPU
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/avrora-hundred-mle-colab-one-shot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-hundred-mle-colab-one-shot
+  cancel-in-progress: false
+
+jobs:
+  colab-100-full-math-fits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      FROZEN_PRIVATE_HEAD: 46d70a9c7d81f53959d0f12a5fce6db856624983
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate existing Google and read-only private code authorizations
+        shell: bash
+        env:
+          HAS_COLAB_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+          HAS_READONLY_CODE: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAS_COLAB_ADC" != "true" || "$HAS_READONLY_CODE" != "true" ]]; then
+            echo "BLOCKED_EXISTING_COLAB_OR_PRIVATE_READONLY_KEY"
+            exit 2
+          fi
+      - name: Read immutable real private HAWKES source with EXISTING read-only key
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: 46d70a9c7d81f53959d0f12a5fce6db856624983
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Pin private SHA and freeze ephemeral standalone 100-case model
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C private_code rev-parse HEAD)" = "$FROZEN_PRIVATE_HEAD"
+          python -m tools.build_hundred_mle_bundle --private-source private_code --out ephemeral_hundred_private_colab.py
+          python -m py_compile ephemeral_hundred_private_colab.py
+      - name: Run 100 full seven-day private HAWKES double-start MLE cases locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          python ephemeral_hundred_private_colab.py > local_hundred_mle.log
+          python -m tools.verify_hundred_mle_colab verify local_hundred_mle.log local_hundred_mle_receipt.json
+      - name: Reuse EXISTING ADC, without new authorization
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Run actual Colab CPU session with 100 separate private model MLE experiments
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
+          if ! colab --auth=adc run ephemeral_hundred_private_colab.py > remote_hundred_mle.log 2>&1; then
+            echo "BLOCKED_COLAB_100_REMOTE_EXECUTION"
+            exit 3
+          fi
+          python -m tools.verify_hundred_mle_colab verify remote_hundred_mle.log remote_hundred_mle_receipt.json
+          python -m tools.verify_hundred_mle_colab compare local_hundred_mle_receipt.json remote_hundred_mle_receipt.json
+          echo "PASS_REAL_COLAB_100_SEVEN_DAY_DOUBLE_START_PRIVATE_MLE_MATH_ONLY"
+      - name: Publish only 100 case SHA and aggregate status receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-colab-hundred-real-private-mle-math-receipts-${{ github.run_id }}
+          path: |
+            local_hundred_mle_receipt.json
+            remote_hundred_mle_receipt.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Destroy private HAWKES source, bundled source, logs and temporary credentials
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf private_code
+          rm -f ephemeral_hundred_private_colab.py local_hundred_mle.log remote_hundred_mle.log
+          if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
