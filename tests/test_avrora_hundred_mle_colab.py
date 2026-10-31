@@ -35,6 +35,18 @@ class FrozenHundredMleTests(unittest.TestCase):
                 for i in range(len(events)-1)))
             self.assertEqual(regime,"BALANCED_NULL" if case%2==0 else "DIRECTIONAL_BURST")
             self.assertEqual(events,m.build_case(case,f)[0])
+    def test_fifty_dense_temporal_cases_actually_test_60_second_kernel(self):
+        f=types.SimpleNamespace(DAY_MS=86400000)
+        dense=0
+        for index in range(100):
+            events,_,regime=m.build_case(index,f)
+            gaps=[y["event_ms"]-x["event_ms"] for x,y in zip(events,events[1:])]
+            if regime=="DIRECTIONAL_BURST":
+                dense+=1
+                self.assertGreater(sum(0<=gap<=1800 for gap in gaps),50)
+            else:
+                self.assertGreater(sum(gap>3600000 for gap in gaps),70)
+        self.assertEqual(dense,50)
     def test_negative_or_forged_case_index_blocked(self):
         for case in (-1,100,True,"22"):
             with self.assertRaisesRegex(ValueError,"CASE_INDEX"):
