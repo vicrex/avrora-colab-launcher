@@ -1,0 +1,82 @@
+name: AVRORA one-shot 1000 synthetic HAWKES research scenarios in Colab CPU
+
+on:
+  workflow_dispatch:
+  # One initial execution on merge; NO schedule and NO recurring GPU/CPU spend.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/avrora-thousand-colab.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avrora-thousand-synthetic-colab-one-shot
+  cancel-in-progress: false
+
+jobs:
+  thousand-cpu-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prove locally bounded exact 1000-scenario code and adversarial receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_avrora_thousand_colab.py' -v
+          python tools/avrora_thousand_colab.py > local_thousand.log
+          python -m tools.verify_thousand_colab verify local_thousand.log local_thousand_receipt.json
+      - name: Check existing Google Colab ADC authorization only
+        shell: bash
+        env:
+          HAVE_COLAB: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$HAVE_COLAB" != 'true' ]; then
+            echo "BLOCKED_EXISTING_COLAB_ADC_UNAVAILABLE"
+            exit 2
+          fi
+      - name: Reuse existing ADC without asking for new authorization
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Run exactly one Colab CPU session containing 1000 synthetic trials
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
+          if ! colab --auth=adc run tools/avrora_thousand_colab.py > remote_thousand.log 2>&1; then
+            echo 'BLOCKED_REMOTE_COLAB_EXECUTION_NO_RECEIPT'
+            exit 3
+          fi
+          python -m tools.verify_thousand_colab verify remote_thousand.log remote_thousand_receipt.json
+          python -m tools.verify_thousand_colab compare local_thousand_receipt.json remote_thousand_receipt.json
+          echo 'PASS_REAL_COLAB_1000_SYNTHETIC_MATH_CASES_NO_TRADING'
+      - name: Preserve sanitized aggregate SHA proofs only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-thousand-synthetic-colab-ack-${{ github.run_id }}
+          path: |
+            local_thousand_receipt.json
+            remote_thousand_receipt.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Destroy temporary credentials and private/sensitive logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
+          rm -f local_thousand.log remote_thousand.log

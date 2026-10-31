@@ -1,0 +1,11 @@
+# AVRORA: frozen 1000-scenario Colab CPU research protocol (31 Oct 2026)
+
+This is a **single** resource-bounded Colab CPU invocation executing **1000 synthetic mathematical research stress scenarios**, not 1000 standalone Colab sessions, 1000 distinct trading strategies, 1000 maker fills, or 1000 independent OOS trials. User requested 1000 Colab runs; batching is intentional to avoid exceeding free-resource quotas.
+
+**Frozen design before collecting Colab output:** seed 20261031, exactly 1000 cases distributed across BTC/ETH/SOL/XRP/LINK/NEAR, 500 balanced-sign null paths plus 500 signed clustered paths; immutable beta ln(2)/60, base(.003,.003), excitation ((.008,.001),(.001,.008)), toxicity threshold 0.25; raw-event direct kernel vs independently implemented recursive exponential-memory kernel. A third validation checks all 1000 adversarial invalid receipt orderings. One injected *future* event must never change any result.
+
+**Acceptance (all required):** every case has direct/recursive numerical error <=1e-12, 1000/1000 future-invariance and invalid-receipt checks, exact 500+500 source split and all six symbols, local-run and actual Colab-produced SHA receipts match byte-for-byte; any missing secret, local/remote exception, changed seed, false maker/OOS/independent CHECK2, missing receipt, invalid hash or mismatched remote output must fail closed. No user authorization changes.
+
+**Operational:** dedicated new `.github/workflows/avrora-thousand-colab.yml` has NO schedule; it executes on its own first merge into main or explicit workflow_dispatch. GitHub Actions consumes the existing read-only Google ADC secret, executes offline tests first, runs exactly ONE Colab CPU CLI session then erases temporary credentials, stores only sanitized aggregate SHA receipts (7 day retention). No strategy parameter/financial secret appears in public outputs.
+
+**Epistemic boundary:** Scenarios are artificially generated. Passing proves numerical consistency, deterministic six-asset coverage and anti-future contamination for the **HAWKES01 feature**, not seven-day MLE calibration on actual market receipts, independent CHECK2, net cost or any tradable edge. `REAL=OFF`, `HOLDOUT=SEALED`. Continue prospectively authenticated event-time data and vector-space novelty work separately; don't interpret "1000" as a completed strategy validation program.
