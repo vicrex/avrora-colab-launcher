@@ -25,7 +25,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_CODE_SHA: ad8b3f716ef77c6151012ba0e62d8870a6aacdcb
+      PRIVATE_CODE_SHA: 2c731f77a4107bbc287768400909eab16bdcfda4
     steps:
       - name: Verify read-only private source credential
         shell: bash
@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: ad8b3f716ef77c6151012ba0e62d8870a6aacdcb
+          ref: 2c731f77a4107bbc287768400909eab16bdcfda4
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -65,6 +65,7 @@ jobs:
             research.insight_map.test_multifamily_vector_adapter
             research.insight_map.test_multifamily_canonical_ingest
             research.strategy_search.test_sym01_breadth
+            research.strategy_search.test_costfeas01
           )
           failed=0
           for module in "${modules[@]}"; do
@@ -91,83 +92,3 @@ jobs:
           rm -rf "$GITHUB_WORKSPACE/private_code"
           rm -f "$RUNNER_TEMP"/research_insight_map_test_multifamily_*.log
 
-  sym01-private-panel:
-    # One-shot existing workflow push trigger; no schedule, no promotion.
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      REAL: "OFF"
-      HOLDOUT: "SEALED"
-      PRIVATE_CODE_SHA: ad8b3f716ef77c6151012ba0e62d8870a6aacdcb
-      PRIVATE_DATA_SHA: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
-    steps:
-      - name: Ensure both EXISTING read-only research credentials are present
-        shell: bash
-        env:
-          HAVE_CODE: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
-          HAVE_DATA: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
-        run: |
-          set -euo pipefail
-          test "$HAVE_CODE" = true && test "$HAVE_DATA" = true
-      - name: Checkout exact immutable PRIVATE research candidate (no live trading)
-        uses: actions/checkout@v4
-        with:
-          repository: vicrex/AVRORA
-          ref: ad8b3f716ef77c6151012ba0e62d8870a6aacdcb
-          path: private_code
-          persist-credentials: false
-          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
-          ssh-strict: true
-          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
-      - name: Checkout frozen 12-week P816 source (already approved)
-        uses: actions/checkout@v4
-        with:
-          repository: vicrex/avrora-wave-source
-          ref: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
-          path: private_source
-          persist-credentials: false
-          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
-          ssh-strict: true
-          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Run actual P816 2021-11-29 six-symbol mirrored RETEST stage A ONLY
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git -C private_code rev-parse HEAD)" = "$PRIVATE_CODE_SHA"
-          test "$(git -C private_source rev-parse HEAD)" = "$PRIVATE_DATA_SHA"
-          cd private_code
-          python -m research.strategy_search.sym01_breadth \
-            --private-data-checkout ../private_source \
-            --week 2021-11-29 --output ../sym01_audit_private.json
-          python - <<'PY'
-          import hashlib, json, pathlib
-          p=pathlib.Path('../sym01_audit_private.json')
-          obj=json.loads(p.read_bytes())
-          status=obj.get('status')
-          if status not in ('BLOCKED_SIGN_EQUIVARIANCE','PASS_SHADOW_MIRROR_DIAGNOSTIC'):
-              raise SystemExit('BLOCKED_SYM01_INVALID_DIAGNOSTIC_STATUS')
-          if (obj.get('real')!='OFF' or obj.get('holdout')!='SEALED'
-              or obj.get('oos_proven') is not False
-              or obj.get('maker_fill_proven') is not False
-              or obj.get('check2_proven') is not False):
-              raise SystemExit('BLOCKED_SYM01_FUTURE_PROOF_FABRICATION')
-          b={k:v for k,v in obj.items() if k!='content_sha256'}
-          check=hashlib.sha256(json.dumps(b,sort_keys=True,ensure_ascii=False,
-              separators=(',',':'),allow_nan=False).encode()).hexdigest()
-          if check!=obj.get('content_sha256'):
-              raise SystemExit('BLOCKED_SYM01_RECEIPT_SHA')
-          print('SYM01_PRIVATE_P816_MIRROR_STAGE_A',status,'EVENTS',
-                obj['tested_symbol_signal_events'],'SIGNAL_MISMATCHES',
-                obj['signal_mismatches'],'PATH_MISMATCHES',
-                obj['risk_or_path_mismatches'],'SHA',check)
-          print('SYM01_STAGE_B_ECONOMICS_BLOCKED_UNTIL_REAL_MIRROR_AND_CHECK2')
-          PY
-      - name: Destroy all private source, results and credentials after diagnostic
-        if: always()
-        shell: bash
-        run: |
-          rm -rf "$GITHUB_WORKSPACE/private_code" "$GITHUB_WORKSPACE/private_source"
-          rm -f "$GITHUB_WORKSPACE/sym01_audit_private.json"
