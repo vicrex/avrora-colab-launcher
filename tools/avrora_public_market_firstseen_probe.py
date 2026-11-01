@@ -22,6 +22,8 @@ SCHEMA="AVRORA_PUBLIC_FIRST_OBSERVED_TRADE_L2_SHORT_PROBE_V1"
 MAX_RAW_MSG=2_000_000
 MAX_FRAMES=100_000
 MAX_UNCOMPRESSED=160_000_000
+MAX_SECONDS=240
+L50_OBSERVED_GAP_MS=2000
 
 
 def canonical(x):
@@ -42,6 +44,10 @@ class Probe:
         self.ids=set();self.acks=set()
         self.first_utc_ms=None;self.last_utc_ms=None
         self.last_mono_ns=None
+        # These are receive-to-receive gaps; even >2s does NOT prove loss.
+        self.l50_last_mono_ns={}
+        self.l50_max_interarrival_ms=Counter()
+        self.l50_interarrival_over_2000ms=Counter()
         self.raw_digest=hashlib.sha256()
     def close(self):
         self.gz.close();self.source.close()
@@ -103,6 +109,14 @@ class Probe:
                     or any(not isinstance(data.get(side),list) for side in ("a","b"))):
                 raise ValueError("BLOCKED_PROBE_BOOK_SCHEMA")
             self.books[symbol]+=1
+            old_mono=self.l50_last_mono_ns.get(symbol)
+            if old_mono is not None:
+                interval_ms=(monotonic_ns-old_mono)//1_000_000
+                self.l50_max_interarrival_ms[symbol]=max(
+                    interval_ms,self.l50_max_interarrival_ms[symbol])
+                if interval_ms>L50_OBSERVED_GAP_MS:
+                    self.l50_interarrival_over_2000ms[symbol]+=1
+            self.l50_last_mono_ns[symbol]=monotonic_ns
             u=data["u"];seq=data["seq"]
             prev=self.book_updates.get(symbol)
             prev_seq=self.book_sequences.get(symbol)
@@ -143,6 +157,11 @@ class Probe:
             "clock_skew_trades":self.skew,
             "book_update_uncertainties":self.book_gaps,
             "book_update_id_jumps_not_gaps":self.book_id_jumps,
+            "l50_max_observed_receive_interarrival_ms":{
+                s:self.l50_max_interarrival_ms[s] for s in SYMBOLS},
+            "l50_observed_receive_interarrivals_over_2000ms":{
+                s:self.l50_interarrival_over_2000ms[s] for s in SYMBOLS},
+            "l50_interarrival_over_2000ms_is_not_proof_of_packet_loss":True,
             "accepted_market_frames":self.frames,
             "accepted_subscribe_acks":len(self.acks),
             "first_receive_utc_ms":self.first_utc_ms,
@@ -165,7 +184,7 @@ class Probe:
 
 
 async def collect(seconds, probe):
-    if type(seconds) is not int or not 15<=seconds<=90:
+    if type(seconds) is not int or not 15<=seconds<=MAX_SECONDS:
         raise ValueError("BLOCKED_PROBE_DURATION")
     from websockets.asyncio.client import connect
     async with connect(ENDPOINT,max_size=MAX_RAW_MSG,

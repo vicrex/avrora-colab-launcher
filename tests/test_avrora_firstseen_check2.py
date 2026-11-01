@@ -52,6 +52,38 @@ class RawCheck2Tests(unittest.TestCase):
             self.assertFalse(out["economic_net_profit_proven"])
             self.assertEqual(out,verifier.check(raw,receipt))
 
+    def test_new_l50_diagnostics_independently_replayed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw,receipt=fake_capture(tmp)
+            d=verifier.check(raw,receipt)
+            self.assertTrue(d["l50_interarrival_metrics_independently_replayed"])
+            self.assertTrue(all(x==0 for x in
+                d["l50_observed_receive_interarrivals_over_2000ms"].values()))
+            self.assertTrue(d["l50_interarrival_does_not_prove_continuity_or_packet_loss"])
+            self.assertFalse(d["all_feed_packets_proven"])
+
+    def test_tampered_and_resigned_l50_interval_receipt_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw,receipt=fake_capture(tmp)
+            d=json.loads(receipt.read_bytes())
+            d["l50_max_observed_receive_interarrival_ms"]["BTCUSDT"]=99999
+            d["receipt_sha256"]=hashlib.sha256(producer.canonical({
+                k:v for k,v in d.items() if k!="receipt_sha256"})).hexdigest()
+            receipt.write_bytes(producer.canonical(d)+b"\n")
+            with self.assertRaisesRegex(ValueError,"L50_INTERVAL_RECEIPT_MISMATCH"):
+                verifier.check(raw,receipt)
+
+    def test_missing_one_gap_field_rejected_even_if_receipt_resigned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            raw,receipt=fake_capture(tmp)
+            d=json.loads(receipt.read_bytes())
+            del d["l50_observed_receive_interarrivals_over_2000ms"]
+            d["receipt_sha256"]=hashlib.sha256(producer.canonical({
+                k:v for k,v in d.items() if k!="receipt_sha256"})).hexdigest()
+            receipt.write_bytes(producer.canonical(d)+b"\n")
+            with self.assertRaisesRegex(ValueError,"L50_DIAGNOSTIC_FIELDS_PARTIAL"):
+                verifier.check(raw,receipt)
+
     def test_modified_receipt_rejected_even_when_reforged(self):
         with tempfile.TemporaryDirectory() as tmp:
             raw,receipt=fake_capture(tmp)
