@@ -32,6 +32,19 @@ def sha(value):
     return hashlib.sha256(value).hexdigest()
 
 
+def reject_duplicate_daily_gzip(seen, symbol, day, source_sha256):
+    """A different UTC day for the same symbol cannot reuse identical gzip bytes.
+
+    Valid archive ZIP SHA and CRC prove integrity of uploaded bytes, but not
+    correct source-day selection. Day-specific manifests alone can be relabeled.
+    """
+    key = (symbol, source_sha256)
+    previous = seen.get(key)
+    if previous is not None and previous != day:
+        raise ValueError("BLOCKED_REUSED_DAILY_GZIP_BYTES")
+    seen[key] = day
+
+
 def utc_time(value):
     if not isinstance(value, str) or not value.endswith("Z"):
         raise ValueError("BLOCKED_SOURCE_UNVERIFIED_UTC_TIMESTAMP")
@@ -110,6 +123,7 @@ def audit(root, asof_utc):
     asof_available = 0
     missing = []
     source_lineage = hashlib.sha256()
+    daily_gzip_seen = {}
     for day in days:
         for symbol in SYMBOLS:
             directory = root / symbol / day.isoformat()
@@ -130,6 +144,8 @@ def audit(root, asof_utc):
                 raise ValueError("BLOCKED_HAWKES_SOURCE_BYTES_OR_CRC") from exc
             if actual_proof != source["manifest_sha256"]:
                 raise ValueError("BLOCKED_HAWKES_SOURCE_INDEPENDENT_VERIFY")
+            reject_duplicate_daily_gzip(daily_gzip_seen, symbol, day.isoformat(),
+                                        source["source_gz_sha256"])
             byte_verified += 1
             asof_available += int(source["available_as_of"])
             source_lineage.update(canonical({

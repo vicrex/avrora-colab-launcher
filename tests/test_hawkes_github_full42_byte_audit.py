@@ -16,10 +16,13 @@ from tools.hawkes_seven_day_archive_audit import canonical, required_days
 ASOF=date(2026,10,31)
 
 
-def archive(root,symbol,day,number):
+def archive(root,symbol,day,number,source_day=None):
     root=Path(root)
+    observed_day=source_day if source_day is not None else day
+    source_ms=int(datetime.combine(observed_day,datetime.min.time(),
+                                   tzinfo=timezone.utc).timestamp()*1000)
     payload=(b"timestamp,symbol,side,size,price\n"
-             +b"123,"+symbol.encode()+b",Buy,1,123\n")
+             +str(source_ms).encode()+b","+symbol.encode()+b",Buy,1,123\n")
     zipped_gz=gzip.compress(payload,mtime=0)
     when=datetime.combine(day+timedelta(days=1),datetime.min.time(),
                           tzinfo=timezone.utc).replace(hour=12).isoformat().replace("+00:00","Z")
@@ -54,12 +57,14 @@ def archive(root,symbol,day,number):
     return item,zip_path
 
 
-def fixtures(root):
+def fixtures(root,reuse_symbol=None):
     items=[];paths={}
+    first_day=required_days(ASOF)[0]
     for d in required_days(ASOF):
         for s in a.SYMBOLS:
             n=len(items)+1
-            item,loc=archive(root,s,d,n)
+            item,loc=archive(root,s,d,n,
+                             source_day=first_day if s==reuse_symbol else None)
             items.append(item);paths[n]=loc
     return items,paths
 
@@ -86,6 +91,14 @@ class RealByteAuditOffline(unittest.TestCase):
             self.assertEqual((r["real"],r["holdout"]),("OFF","SEALED"))
             self.assertEqual(r["receipt_sha256"],a.sha(canonical({
                 k:v for k,v in r.items() if k!="receipt_sha256"})))
+    def test_relabelled_daily_gzip_is_blocked_despite_valid_zip_crc_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            items,paths=fixtures(tmp,reuse_symbol="BTCUSDT")
+            def local_copy(n,dest):
+                Path(dest).write_bytes(paths[n].read_bytes())
+            with self.assertRaisesRegex(ValueError,"BLOCKED_REUSED_DAILY_GZIP_BYTES"):
+                a.audit([{"artifacts":items}],ASOF,downloader=local_copy)
+
     def test_missing_day_blocks_before_any_download(self):
         with tempfile.TemporaryDirectory() as d:
             items,_=fixtures(d)

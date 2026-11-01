@@ -14,18 +14,22 @@ from tools import bybit_official_archive_transport as t
 
 ASOF = date(2026, 10, 31)
 DAYS = a.required_days(ASOF)
-DAY_SAMPLE = b"timestamp,symbol,side,size,price\n123,BTCUSDT,Buy,1,123\n"
+DAY_HEADER = b"timestamp,symbol,side,size,price\n"
 
 
-def materialize(root, missing=None, late=None):
+def materialize(root, missing=None, late=None, reuse_symbol=None):
     for day in DAYS:
         for symbol in a.SYMBOLS:
             if (day,symbol)==missing:
                 continue
             p=Path(root)/symbol/day.isoformat()
             p.mkdir(parents=True)
-            compressed=gzip.compress(
-                DAY_SAMPLE.replace(b"BTCUSDT",symbol.encode()),mtime=0)
+            source_day = DAYS[0] if reuse_symbol == symbol else day
+            source_ms = int(datetime.combine(source_day, datetime.min.time(),
+                                             tzinfo=timezone.utc).timestamp()*1000)
+            payload = (DAY_HEADER + str(source_ms).encode() + b"," +
+                       symbol.encode() + b",Buy,1,123\n")
+            compressed=gzip.compress(payload,mtime=0)
             filename=t.archive_filename(day,symbol)
             (p/filename).write_bytes(compressed)
             at=datetime.combine(day+timedelta(days=1),
@@ -42,8 +46,7 @@ def materialize(root, missing=None, late=None):
                 "file_name":filename,
                 "source_gz_sha256":hashlib.sha256(compressed).hexdigest(),
                 "source_compressed_bytes":len(compressed),
-                "source_uncompressed_bytes":len(
-                    DAY_SAMPLE.replace(b"BTCUSDT",symbol.encode())),
+                "source_uncompressed_bytes":len(payload),
                 "source_text_lines":2,
                 "archive_received_at_utc":when,
                 "causally_usable_not_before_utc":when,
@@ -87,6 +90,14 @@ class SevenDayArchiveTests(unittest.TestCase):
             self.assertEqual(report["receipt_sha256"],a.sha(a.canonical({
                 k:v for k,v in report.items() if k!="receipt_sha256"})))
             self.assertEqual(report,a.audit(tmp,ASOF))
+
+    def test_reused_same_symbol_gzip_different_day_is_blocked(self):
+        # Every manifest, per-ZIP SHA, gzip SHA and CRC still verifies.
+        # Re-labeling one day's bytes into other dates must not pass.
+        with tempfile.TemporaryDirectory() as tmp:
+            materialize(tmp, reuse_symbol="BTCUSDT")
+            with self.assertRaisesRegex(ValueError,"BLOCKED_REUSED_DAILY_GZIP_BYTES"):
+                a.audit(tmp,ASOF)
 
     def test_missing_one_symbol_day_blocks_without_padding(self):
         with tempfile.TemporaryDirectory() as tmp:
