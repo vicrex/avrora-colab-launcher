@@ -24,6 +24,7 @@ from .hawkes_github_artifact_inventory import (
 )
 from .hawkes_seven_day_archive_audit import (
     SYMBOLS, canonical, required_days, sha, validate_one_manifest,
+    reject_duplicate_daily_gzip,
 )
 
 SCHEMA = "AVRORA_HAWKES_GITHUB_42_REAL_ARCHIVE_BYTE_AUDIT_V1"
@@ -131,6 +132,7 @@ def audit(pages, asof, *, downloader=gh_download):
     chosen, meta = select(pages, asof)
     receipts = []
     lineage = hashlib.sha256()
+    daily_gzip_seen = {}
     for day in required_days(asof):
         for symbol in SYMBOLS:
             item = chosen[(symbol, day.isoformat())]
@@ -138,6 +140,8 @@ def audit(pages, asof, *, downloader=gh_download):
                 zip_path = Path(tmp) / "source.zip"
                 downloader(item["id"], zip_path)
                 result = verify_one(zip_path, symbol, day, asof, item)
+            reject_duplicate_daily_gzip(daily_gzip_seen, symbol, day.isoformat(),
+                                        result["source_gz_sha256"])
             receipts.append(result)
             lineage.update(canonical({
                 "day":day.isoformat(), "symbol":symbol,
