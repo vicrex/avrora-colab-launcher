@@ -19,6 +19,7 @@ import tempfile
 import zipfile
 
 from . import bybit_official_archive_transport as transport
+from .bybit_archive_day_contents import verify_day
 from .hawkes_github_artifact_inventory import (
     fetch_metadata, inventory, NAME_RE, REPO,
 )
@@ -113,6 +114,8 @@ def verify_one(path, symbol, day, asof, item):
             v = validate_one_manifest(m, symbol, day, asof)
             if transport.verify(root, symbol) != v["manifest_sha256"]:
                 raise ValueError("BLOCKED_GITHUB_SOURCE_INDEPENDENT_VERIFY")
+            date_check = verify_day(root / expected, symbol, day,
+                                    m["source_text_lines"])
     return {
         "symbol": symbol, "day_utc": day.isoformat(),
         "artifact_id": item["id"], "artifact_zip_sha256": digest,
@@ -125,6 +128,7 @@ def verify_one(path, symbol, day, asof, item):
         "available_by_asof_midnight": v["available_as_of"],
         "gzip_crc_verified": True, "github_zip_sha_verified": True,
         "individual_first_seen_proven": False,
+        **date_check,
     }
 
 
@@ -159,6 +163,8 @@ def audit(pages, asof, *, downloader=gh_download):
         "distinct_symbol_day_pairs":len(set(
             (x["symbol"], x["day_utc"]) for x in receipts)),
         "source_lineage_sha256":lineage.hexdigest(),
+        "source_day_csv_scope_verified":all(
+            r["event_day_scope_verified"] for r in receipts),
         "not_available_by_asof_midnight":sum(
             not x["available_by_asof_midnight"] for x in receipts),
         "metadata_inventory_sha256":meta["receipt_sha256"],
