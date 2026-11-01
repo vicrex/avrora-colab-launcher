@@ -38,6 +38,7 @@ class Probe:
         self.frames=0;self.uncompressed=0
         self.trades=Counter();self.books=Counter();self.snapshots=Counter()
         self.duplicates=0;self.skew=0;self.book_gaps=0;self.book_updates={}
+        self.book_sequences={};self.book_id_jumps=0
         self.ids=set();self.acks=set()
         self.first_utc_ms=None;self.last_utc_ms=None
         self.last_mono_ns=None
@@ -102,14 +103,21 @@ class Probe:
                     or any(not isinstance(data.get(side),list) for side in ("a","b"))):
                 raise ValueError("BLOCKED_PROBE_BOOK_SCHEMA")
             self.books[symbol]+=1
-            u=data["u"];prev=self.book_updates.get(symbol)
+            u=data["u"];seq=data["seq"]
+            prev=self.book_updates.get(symbol)
+            prev_seq=self.book_sequences.get(symbol)
             if m["type"]=="snapshot":
                 self.snapshots[symbol]+=1
-                self.book_updates[symbol]=u
             else:
-                if prev is None or u<=prev or u>prev+1:
+                # L50 is a filtered book; u may skip integers legitimately.
+                # Do not interpret a jump as a missing packet. A delta without
+                # a prior snapshot, or a replay/regression, is uncertain.
+                if prev is None or prev_seq is None or u<=prev or seq<=prev_seq or u==1:
                     self.book_gaps+=1
-                self.book_updates[symbol]=u
+                elif u>prev+1:
+                    self.book_id_jumps+=1
+            self.book_updates[symbol]=u
+            self.book_sequences[symbol]=seq
         self.frames+=1
         if self.frames>MAX_FRAMES:
             raise ValueError("BLOCKED_PROBE_FRAME_CAP")
@@ -134,6 +142,7 @@ class Probe:
             "repeated_trade_ids":self.duplicates,
             "clock_skew_trades":self.skew,
             "book_update_uncertainties":self.book_gaps,
+            "book_update_id_jumps_not_gaps":self.book_id_jumps,
             "accepted_market_frames":self.frames,
             "accepted_subscribe_acks":len(self.acks),
             "first_receive_utc_ms":self.first_utc_ms,
