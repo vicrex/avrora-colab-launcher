@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 
 from . import bybit_official_archive_transport as transport
+from .bybit_archive_day_contents import verify_day
 
 SCHEMA = "AVRORA_HAWKES_SEVEN_DAY_SIX_SYMBOL_ARCHIVE_AUDIT_V1"
 SYMBOLS = transport.SYMBOLS
@@ -146,6 +147,8 @@ def audit(root, asof_utc):
                 raise ValueError("BLOCKED_HAWKES_SOURCE_INDEPENDENT_VERIFY")
             reject_duplicate_daily_gzip(daily_gzip_seen, symbol, day.isoformat(),
                                         source["source_gz_sha256"])
+            verify_day(directory / transport.archive_filename(day, symbol),
+                       symbol, day, manifest["source_text_lines"])
             byte_verified += 1
             asof_available += int(source["available_as_of"])
             source_lineage.update(canonical({
@@ -171,6 +174,7 @@ def audit(root, asof_utc):
         ],
         "source_lineage_sha256": source_lineage.hexdigest(),
         "archive_complete_by_our_42_byte_checks": all_bytes,
+        "all_present_archive_event_days_checked": all_bytes,
         "provider_trade_count_completeness_proven": False,
         "per_event_historical_first_seen_proven": False,
         "hawkes_model_fit_ready": False,

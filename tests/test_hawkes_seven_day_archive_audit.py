@@ -14,21 +14,26 @@ from tools import bybit_official_archive_transport as t
 
 ASOF = date(2026, 10, 31)
 DAYS = a.required_days(ASOF)
-DAY_HEADER = b"timestamp,symbol,side,size,price\n"
+DAY_HEADER = (b"timestamp,symbol,side,size,price,tickDirection,"
+              b"trdMatchID,grossValue,homeNotional,foreignNotional,RPI\n")
 
 
-def materialize(root, missing=None, late=None, reuse_symbol=None):
+def materialize(root, missing=None, late=None, reuse_symbol=None,
+                wrong_day_symbol=None):
     for day in DAYS:
         for symbol in a.SYMBOLS:
             if (day,symbol)==missing:
                 continue
             p=Path(root)/symbol/day.isoformat()
             p.mkdir(parents=True)
-            source_day = DAYS[0] if reuse_symbol == symbol else day
+            source_day = (DAYS[0] if reuse_symbol == symbol
+                          else DAYS[0]-timedelta(days=1)
+                          if wrong_day_symbol == symbol and day == DAYS[0]
+                          else day)
             source_ms = int(datetime.combine(source_day, datetime.min.time(),
                                              tzinfo=timezone.utc).timestamp()*1000)
-            payload = (DAY_HEADER + str(source_ms).encode() + b"," +
-                       symbol.encode() + b",Buy,1,123\n")
+            payload = (DAY_HEADER + str(source_ms//1000).encode() + b"," +
+                       symbol.encode() + b",Buy,1,123,PlusTick,trade-id-1,123,1,123,0\n")
             compressed=gzip.compress(payload,mtime=0)
             filename=t.archive_filename(day,symbol)
             (p/filename).write_bytes(compressed)
@@ -97,6 +102,12 @@ class SevenDayArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             materialize(tmp, reuse_symbol="BTCUSDT")
             with self.assertRaisesRegex(ValueError,"BLOCKED_REUSED_DAILY_GZIP_BYTES"):
+                a.audit(tmp,ASOF)
+
+    def test_signed_manifest_correct_but_events_outside_day_are_blocked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            materialize(tmp,wrong_day_symbol="BTCUSDT")
+            with self.assertRaisesRegex(ValueError,"BLOCKED_ARCHIVE_EVENT_OUTSIDE_UTC_DAY"):
                 a.audit(tmp,ASOF)
 
     def test_missing_one_symbol_day_blocks_without_padding(self):

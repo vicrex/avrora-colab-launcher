@@ -21,8 +21,9 @@ def archive(root,symbol,day,number,source_day=None):
     observed_day=source_day if source_day is not None else day
     source_ms=int(datetime.combine(observed_day,datetime.min.time(),
                                    tzinfo=timezone.utc).timestamp()*1000)
-    payload=(b"timestamp,symbol,side,size,price\n"
-             +str(source_ms).encode()+b","+symbol.encode()+b",Buy,1,123\n")
+    payload=(b"timestamp,symbol,side,size,price,tickDirection,trdMatchID,grossValue,homeNotional,foreignNotional,RPI\n"
+             +str(source_ms//1000).encode()+b","+symbol.encode()
+             +b",Buy,1,123,PlusTick,trade-id-1,123,1,123,0\n")
     zipped_gz=gzip.compress(payload,mtime=0)
     when=datetime.combine(day+timedelta(days=1),datetime.min.time(),
                           tzinfo=timezone.utc).replace(hour=12).isoformat().replace("+00:00","Z")
@@ -57,14 +58,16 @@ def archive(root,symbol,day,number,source_day=None):
     return item,zip_path
 
 
-def fixtures(root,reuse_symbol=None):
+def fixtures(root,reuse_symbol=None,wrong_day_symbol=None):
     items=[];paths={}
     first_day=required_days(ASOF)[0]
     for d in required_days(ASOF):
         for s in a.SYMBOLS:
             n=len(items)+1
-            item,loc=archive(root,s,d,n,
-                             source_day=first_day if s==reuse_symbol else None)
+            source_day = (first_day if s==reuse_symbol
+                          else first_day-timedelta(days=1)
+                          if s==wrong_day_symbol and d==first_day else None)
+            item,loc=archive(root,s,d,n,source_day=source_day)
             items.append(item);paths[n]=loc
     return items,paths
 
@@ -96,7 +99,19 @@ class RealByteAuditOffline(unittest.TestCase):
             items,paths=fixtures(tmp,reuse_symbol="BTCUSDT")
             def local_copy(n,dest):
                 Path(dest).write_bytes(paths[n].read_bytes())
-            with self.assertRaisesRegex(ValueError,"BLOCKED_REUSED_DAILY_GZIP_BYTES"):
+            # Both independent guards fail closed. In this path per-event
+            # day validation runs before cross-archive duplicate comparison.
+            with self.assertRaisesRegex(
+                ValueError, "BLOCKED_(ARCHIVE_EVENT_OUTSIDE_UTC_DAY|REUSED_DAILY_GZIP_BYTES)"
+            ):
+                a.audit([{"artifacts":items}],ASOF,downloader=local_copy)
+
+    def test_correct_zip_crc_and_manifest_but_wrong_event_day_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            items,paths=fixtures(tmp,wrong_day_symbol="BTCUSDT")
+            def local_copy(n,dest):
+                Path(dest).write_bytes(paths[n].read_bytes())
+            with self.assertRaisesRegex(ValueError,"BLOCKED_ARCHIVE_EVENT_OUTSIDE_UTC_DAY"):
                 a.audit([{"artifacts":items}],ASOF,downloader=local_copy)
 
     def test_missing_day_blocks_before_any_download(self):

@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/hawkes-full42-byte-audit-one-shot.yml'
+      - 'tools/bybit_archive_day_contents.py'
   workflow_dispatch:
 
 permissions:
