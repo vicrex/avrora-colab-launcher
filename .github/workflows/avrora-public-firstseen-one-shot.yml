@@ -34,6 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest discover -s tests -p 'test_avrora_public_market_firstseen_probe.py' -v
+          python -m unittest discover -s tests -p 'test_avrora_firstseen_check2.py' -v
       - name: Install minimum bounded public WebSocket receive library
         shell: bash
         run: python -m pip install -q --disable-pip-version-check 'websockets>=14,<16'
@@ -66,6 +67,14 @@ jobs:
               'live_trading_authorized'))
           print('PASS_ACTUAL_FIRST_OBSERVED_6x_TRADES_L2_SHAS_NO_STRATEGY_CLAIM',sha)
           PY
+      - name: Independently replay raw market frames and reconcile receipt SHA/counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m tools.avrora_firstseen_check2 \
+            --raw firstseen_probe/observed_ws_frames.jsonl.gz \
+            --receipt firstseen_probe/probe_receipt.json \
+            --out firstseen_probe/independent_raw_check2.json
       - name: Persist original public first-observed raw frames with matching receipt
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -74,6 +83,7 @@ jobs:
           path: |
             firstseen_probe/observed_ws_frames.jsonl.gz
             firstseen_probe/probe_receipt.json
+            firstseen_probe/independent_raw_check2.json
           if-no-files-found: warn
           retention-days: 90
       - name: Remove temporary public market data from runner

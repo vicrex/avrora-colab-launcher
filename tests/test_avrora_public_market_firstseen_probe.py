@@ -67,9 +67,27 @@ class PublicIngressProbeTests(unittest.TestCase):
             topic="orderbook.50.LINKUSDT"
             data={"s":"LINKUSDT","b":[],"a":[],"u":100,"seq":999}
             x.ingest(frame(topic,data,type="delta",cts=1000),1000,1000)
-            x.ingest(frame(topic,dict(data,u=103),type="delta",cts=1001),1001,1001)
-            self.assertEqual(x.book_gaps,2)
+            x.ingest(frame(topic,dict(data,u=103,seq=1001),
+                           type="delta",cts=1001),1001,1001)
+            self.assertEqual(x.book_gaps,1)
+            self.assertEqual(x.book_id_jumps,1)
             x.close()
+    def test_l50_update_id_jump_is_not_evidence_of_missing_packet(self):
+        with tempfile.TemporaryDirectory() as d:
+            x=p.Probe(Path(d)/"raw.gz")
+            topic="orderbook.50.BTCUSDT"
+            data={"s":"BTCUSDT","b":[["100","2"]],"a":[["101","2"]],
+                  "u":123,"seq":800}
+            x.ingest(frame(topic,data,type="snapshot",cts=1000),1000,1000)
+            x.ingest(frame(topic,dict(data,u=127,seq=805),
+                           type="delta",cts=1001),1001,1001)
+            self.assertEqual(x.book_gaps,0)
+            self.assertEqual(x.book_id_jumps,1)
+            x.ingest(frame(topic,dict(data,u=126,seq=806),
+                           type="delta",cts=1002),1002,1002)
+            self.assertEqual(x.book_gaps,1)
+            x.close()
+
     def test_malformed_message_not_silently_accepted(self):
         with tempfile.TemporaryDirectory() as d:
             x=p.Probe(Path(d)/"raw.gz")
