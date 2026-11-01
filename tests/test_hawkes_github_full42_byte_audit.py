@@ -5,6 +5,8 @@ from pathlib import Path
 import gzip
 import hashlib
 import json
+import contextlib
+import io
 import tempfile
 import unittest
 import zipfile
@@ -113,6 +115,19 @@ class RealByteAuditOffline(unittest.TestCase):
                 Path(dest).write_bytes(paths[n].read_bytes())
             with self.assertRaisesRegex(ValueError,"BLOCKED_ARCHIVE_EVENT_OUTSIDE_UTC_DAY"):
                 a.audit([{"artifacts":items}],ASOF,downloader=local_copy)
+
+    def test_fixture_log_never_masquerades_as_real_archive_sha_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            items, paths=fixtures(tmp)
+            def local_copy(n,dest):
+                Path(dest).write_bytes(paths[n].read_bytes())
+            output=io.StringIO()
+            with contextlib.redirect_stdout(output):
+                r=a.audit([{"artifacts":items}],ASOF,downloader=local_copy)
+            self.assertEqual(r["source_gzip_sha_crc_verified"],42)
+            self.assertEqual(output.getvalue().count(
+                "PASS_SYNTHETIC_FIXTURE_SHA_GZIP_CRC"),42)
+            self.assertNotIn("PASS_ARCHIVE_ORIGINAL_SHA_GZIP_CRC",output.getvalue())
 
     def test_missing_day_blocks_before_any_download(self):
         with tempfile.TemporaryDirectory() as d:

@@ -152,8 +152,13 @@ def audit(pages, asof, *, downloader=gh_download):
                 "gz_sha256":result["source_gz_sha256"],
                 "manifest_sha256":result["manifest_sha256"],
             }))
-            print("PASS_ARCHIVE_ORIGINAL_SHA_GZIP_CRC", symbol, day,
-                  result["source_gz_sha256"], flush=True)
+            # Never print an ORIGINAL-source PASS line for fixture downloads.
+            # Both data types exercise the same byte checks, but only the
+            # default production downloader fetches actual GitHub originals.
+            progress = ("PASS_ARCHIVE_ORIGINAL_SHA_GZIP_CRC"
+                        if downloader is gh_download
+                        else "PASS_SYNTHETIC_FIXTURE_SHA_GZIP_CRC")
+            print(progress, symbol, day, result["source_gz_sha256"], flush=True)
     report = {
         "schema":SCHEMA, "status":"PASS_ARCHIVED_42_FILES_NOT_REALTIME",
         "asof_utc":asof.isoformat(),
