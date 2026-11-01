@@ -1,5 +1,6 @@
 """Offline safety, schema and receipt tests: NEVER connect to Bybit."""
 from __future__ import annotations
+import asyncio
 import gzip
 import hashlib
 import json
@@ -117,6 +118,37 @@ class PublicIngressProbeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,"OVERWRITE"):
                 p.Probe(path)
             self.assertEqual(path.read_bytes(),b"original")
+    def test_longer_bounded_capture_duration_is_fixed_and_no_network_for_bad_duration(self):
+        self.assertEqual(p.MAX_SECONDS,240)
+        self.assertGreaterEqual(p.MAX_SECONDS,180)
+        for value in (0,14,241,10**9,True,30.5):
+            with self.assertRaisesRegex(ValueError,"BLOCKED_PROBE_DURATION"):
+                asyncio.run(p.collect(value,None))
+
+    def test_l50_monotonic_interarrival_counters_are_observed_not_packet_loss(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            probe=p.Probe(Path(tmp)/"longer.gz")
+            sym="BTCUSDT"
+            data={"s":sym,"b":[["100","1"]],"a":[["101","1"]],"u":10,"seq":11}
+            probe.ingest(frame("orderbook.50."+sym,data,type="snapshot",cts=1000),
+                         1000,1_000_000)
+            data2=dict(data,u=11,seq=12)
+            probe.ingest(frame("orderbook.50."+sym,data2,type="delta",cts=3500),
+                         3500,3_501_000_000)
+            data3=dict(data,u=12,seq=13)
+            probe.ingest(frame("orderbook.50."+sym,data3,type="delta",cts=4000),
+                         4000,4_001_000_000)
+            receipt=probe.receipt()
+            self.assertEqual(receipt["l50_max_observed_receive_interarrival_ms"][sym],
+                             3500)
+            self.assertEqual(receipt["l50_observed_receive_interarrivals_over_2000ms"][sym],
+                             1)
+            self.assertEqual(receipt["l50_observed_receive_interarrivals_over_2000ms"]["ETHUSDT"],
+                             0)
+            self.assertTrue(receipt["l50_interarrival_over_2000ms_is_not_proof_of_packet_loss"])
+            self.assertFalse(receipt["no_market_feed_gaps_proven"])
+            self.assertFalse(receipt["continuous_seven_day_coverage_proven"])
+
     def test_no_credential_or_order_endpoints(self):
         import inspect
         src=inspect.getsource(p)
