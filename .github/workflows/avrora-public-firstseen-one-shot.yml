@@ -38,11 +38,11 @@ jobs:
       - name: Install minimum bounded public WebSocket receive library
         shell: bash
         run: python -m pip install -q --disable-pip-version-check 'websockets>=14,<16'
-      - name: Observe Bybit six USDT linear public trades and L2 for 45 seconds
+      - name: Observe Bybit six USDT linear public trades and L2 for 180 seconds (bounded research-only)
         shell: bash
         run: |
           set -euo pipefail
-          python -m tools.avrora_public_market_firstseen_probe --seconds 45 \
+          python -m tools.avrora_public_market_firstseen_probe --seconds 180 \
             --out-dir firstseen_probe
           python - <<'PY'
           import hashlib,json
@@ -56,6 +56,13 @@ jobs:
                  ensure_ascii=False,allow_nan=False).encode()).hexdigest()==sha
           assert set(x['observed_unique_trades'])==set(x['symbols'])
           assert set(x['observed_l2_snapshots'])==set(x['symbols'])
+          # Quote interarrival has its own independently replayed receipt; this
+          # is NOT upstream completeness or a guarantee against packet loss.
+          assert set(x['l50_max_observed_receive_interarrival_ms'])==set(x['symbols'])
+          assert set(x['l50_observed_receive_interarrivals_over_2000ms'])==set(x['symbols'])
+          assert x['l50_interarrival_over_2000ms_is_not_proof_of_packet_loss'] is True
+          assert all(v >= 0 for v in x['l50_max_observed_receive_interarrival_ms'].values())
+          assert all(v >= 0 for v in x['l50_observed_receive_interarrivals_over_2000ms'].values())
           assert not any(x[y] for y in (
               'continuous_seven_day_coverage_proven',
               'no_market_feed_gaps_proven',
@@ -75,6 +82,22 @@ jobs:
             --raw firstseen_probe/observed_ws_frames.jsonl.gz \
             --receipt firstseen_probe/probe_receipt.json \
             --out firstseen_probe/independent_raw_check2.json
+      - name: Verify L50 interarrival receipt from independent raw check2 (no drop claims)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('firstseen_probe/independent_raw_check2.json').read_bytes())
+          assert report['l50_interarrival_metrics_independently_replayed'] is True
+          assert report['l50_interarrival_does_not_prove_continuity_or_packet_loss'] is True
+          assert report['all_feed_packets_proven'] is False
+          assert report['economic_net_profit_proven'] is False
+          assert report['maker_fills_proven'] is False
+          assert report['real']=='OFF' and report['holdout']=='SEALED'
+          print('PASS_ORIGINAL_PUBLIC_L50_INTERARRIVAL_RAW_CHECK2',report['captured_market_frames'])
+          PY
       - name: Persist original public first-observed raw frames with matching receipt
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
