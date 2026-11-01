@@ -99,7 +99,11 @@ class RealByteAuditOffline(unittest.TestCase):
             items,paths=fixtures(tmp,reuse_symbol="BTCUSDT")
             def local_copy(n,dest):
                 Path(dest).write_bytes(paths[n].read_bytes())
-            with self.assertRaisesRegex(ValueError,"BLOCKED_REUSED_DAILY_GZIP_BYTES"):
+            # Both independent guards fail closed. In this path per-event
+            # day validation runs before cross-archive duplicate comparison.
+            with self.assertRaisesRegex(
+                ValueError, "BLOCKED_(ARCHIVE_EVENT_OUTSIDE_UTC_DAY|REUSED_DAILY_GZIP_BYTES)"
+            ):
                 a.audit([{"artifacts":items}],ASOF,downloader=local_copy)
 
     def test_correct_zip_crc_and_manifest_but_wrong_event_day_is_rejected(self):
