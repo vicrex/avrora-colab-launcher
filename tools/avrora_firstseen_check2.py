@@ -63,6 +63,7 @@ def check(raw_path,receipt_path):
     line_sha=hashlib.sha256()
     trades=Counter();books=Counter();snaps=Counter()
     seen=set();ids={};seqs={}
+    l50_last_mono={};l50_max_interval=Counter();l50_long_intervals=Counter()
     duplicates=skew=gaps=skips=frames=bytes_total=0
     first=last=None;previous_mono=None;previous_wall=None
     try:
@@ -123,6 +124,12 @@ def check(raw_path,receipt_path):
                             or not isinstance(data.get("b"),list)):
                         raise ValueError("BLOCKED_CHECK2_L50_SCHEMA")
                     u=data["u"];seq=data["seq"];books[sym]+=1
+                    prior_l50_mono=l50_last_mono.get(sym)
+                    if prior_l50_mono is not None:
+                        delta_ms=(mono-prior_l50_mono)//1_000_000
+                        l50_max_interval[sym]=max(l50_max_interval[sym],delta_ms)
+                        if delta_ms>2000:l50_long_intervals[sym]+=1
+                    l50_last_mono[sym]=mono
                     if frame["type"]=="snapshot":
                         snaps[sym]+=1
                     else:
@@ -135,6 +142,18 @@ def check(raw_path,receipt_path):
                 line_sha.update(line)
     except (OSError,EOFError,UnicodeError) as exc:
         raise ValueError("BLOCKED_CHECK2_GZIP_OR_TEXT") from exc
+    diagnostic_fields=("l50_max_observed_receive_interarrival_ms",
+                       "l50_observed_receive_interarrivals_over_2000ms",
+                       "l50_interarrival_over_2000ms_is_not_proof_of_packet_loss")
+    diagnostics_present=[f in receipt for f in diagnostic_fields]
+    if any(diagnostics_present) and not all(diagnostics_present):
+        raise ValueError("BLOCKED_CHECK2_L50_DIAGNOSTIC_FIELDS_PARTIAL")
+    has_gap_diagnostics=all(diagnostics_present)
+    if has_gap_diagnostics and (
+            receipt["l50_max_observed_receive_interarrival_ms"]!={s:l50_max_interval[s] for s in SYMBOLS}
+            or receipt["l50_observed_receive_interarrivals_over_2000ms"]!={s:l50_long_intervals[s] for s in SYMBOLS}
+            or receipt["l50_interarrival_over_2000ms_is_not_proof_of_packet_loss"] is not True):
+        raise ValueError("BLOCKED_CHECK2_L50_INTERVAL_RECEIPT_MISMATCH")
     if (bytes_total!=receipt.get("uncompressed_bytes")
             or line_sha.hexdigest()!=receipt.get("raw_ingress_jsonl_sha256")
             or frames!=receipt.get("accepted_market_frames")
@@ -158,6 +177,12 @@ def check(raw_path,receipt_path):
             "book_update_uncertainties":gaps,
             "book_update_id_jumps_not_gaps":skips,
             "six_symbol_trade_and_l50_snapshot_verified":True,
+            "l50_interarrival_metrics_independently_replayed":has_gap_diagnostics,
+            "l50_max_observed_receive_interarrival_ms":
+                {s:l50_max_interval[s] for s in SYMBOLS},
+            "l50_observed_receive_interarrivals_over_2000ms":
+                {s:l50_long_intervals[s] for s in SYMBOLS},
+            "l50_interarrival_does_not_prove_continuity_or_packet_loss":True,
             "subscription_acks_independently_replayed":False,
             "all_feed_packets_proven":False,
             "strategy_signal_check2":False,
