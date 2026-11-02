@@ -40,6 +40,15 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'full13' }}
     uses: ./.github/workflows/bybit-official-archive.yml
 
+  firstseen-market-source-gas-hourly:
+    name: Existing GAS FULL13 - bounded public six-symbol firstseen source only
+    # Reuse the existing GAS hourly workflow_dispatch, NOT a second clock.
+    # No private sources, credentials, orders, SIM/replay or Colab required.
+    # Schedule->workflow_call is intentionally excluded: avoid duplicate
+    # first-observed captures when a GAS dispatch and cron overlap.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'full13' }}
+    uses: ./.github/workflows/avrora-public-firstseen-one-shot.yml
+
   private-wave:
     if: ${{ github.event_name == 'workflow_dispatch' || vars.AVRORA_PRIVATE_WAVE_ENABLED == 'true' || vars.AVRORA_FULL13_ENABLED == 'true' }}
     runs-on: ubuntu-latest
