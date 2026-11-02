@@ -1,6 +1,8 @@
 name: AVRORA one-shot six-symbol public first-observed trade and L2 market-source probe
 
 on:
+  # Reused by the ALREADY existing hourly GAS FULL13 dispatch. No new cron.
+  workflow_call:
   workflow_dispatch:
   push:
     branches: [main]
@@ -108,7 +110,10 @@ jobs:
             firstseen_probe/probe_receipt.json
             firstseen_probe/independent_raw_check2.json
           if-no-files-found: warn
-          retention-days: 90
+          # Approx. 0.9MB per real 180s sample. Hourly recording at 90 days
+          # could exceed free artifact storage; archive to verified long-term
+          # immutable storage before this 14-day evidence expires.
+          retention-days: 14
       - name: Remove temporary public market data from runner
         if: ${{ always() }}
         shell: bash
