@@ -1,0 +1,86 @@
+name: AVRORA XSEC source gate fail-closed verification
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/xsec-source-gate-readonly.yml"
+  push:
+    branches:
+      - research/xsec-source-gate-runner-20261106
+    paths:
+      - ".github/workflows/xsec-source-gate-readonly.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  xsec-source-gate:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PRIVATE_SHA: "caf6d5828987b037cdef7993ba94c28d581659f6"
+    steps:
+      - name: Checkout public launcher
+        uses: actions/checkout@v4
+
+      - name: Verify existing read-only private-code key
+        shell: bash
+        env:
+          HAVE_CODE_KEY: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+        run: |
+          set -euo pipefail
+          test "$HAVE_CODE_KEY" = "true"
+
+      - name: Checkout immutable private XSEC source gate
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: caf6d5828987b037cdef7993ba94c28d581659f6
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Invoke mandatory P742 read-only preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd private_code
+          python -m research.strategy_search.avrora_source_preflight \
+            --source P742_DISCOVERY --action reuse \
+            --canonical-read-confirmed --current-source-confirmed \
+            | tee "$RUNNER_TEMP/preflight.json"
+          grep -q '"status": "READY_TO_FETCH_KNOWN_SOURCE_READ_ONLY"' "$RUNNER_TEMP/preflight.json"
+          grep -q '"executed_action": false' "$RUNNER_TEMP/preflight.json"
+          grep -q '"holdout": "SEALED"' "$RUNNER_TEMP/preflight.json"
+
+      - name: Prove XSEC receipt binds hash, raw time bounds and primary result
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd private_code
+          python -m unittest research.strategy_search.test_xsec_source_feasibility -v 2>&1 | tee "$RUNNER_TEMP/tests.log"
+          grep -q "Ran 11 tests" "$RUNNER_TEMP/tests.log"
+          grep -q "^OK$" "$RUNNER_TEMP/tests.log"
+
+      - name: Destroy private checkout and transient logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/private_code"
+          rm -f "$RUNNER_TEMP/preflight.json" "$RUNNER_TEMP/tests.log"
