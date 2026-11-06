@@ -257,8 +257,11 @@ jobs:
           card=dict(schema='AVRORA_FULL13_HOURLY_DECISION_DELTA_V1',run_id=rid,attempt=attempt,
                     trigger=os.environ.get('GITHUB_EVENT_NAME','schedule'),candidate=cand,
                     cache_hit=os.environ.get('AVRORA_CACHED')=='true',real='OFF',holdout='SEALED',
-                    oos=False,maker_fill_proven=False,status='BLOCKED_NO_VERIFIED_FULL13_RECEIPT',
-                    decision='BLOCKED',economics_proven=False,metrics=None,receipt_sha256=None,
+                    oos=False,maker_fill_proven=False,funding_modeled=False,slippage_modeled=False,
+                    status='BLOCKED_NO_VERIFIED_FULL13_RECEIPT',decision='BLOCKED',
+                    economics_proven=False,execution_economics_proven=False,
+                    modelled_stress_economics_verified=False,economics_scope='NONE',
+                    owner_required_16bps_present=False,metrics=None,receipt_sha256=None,
                     reason_code='BLOCKED_NO_VERIFIED_FULL13_RECEIPT')
           try:
               r=f.verify_receipt(json.loads(pathlib.Path(os.environ['AVRORA_RECEIPT']).read_text()),w.load_manifest(),cand)
@@ -266,7 +269,14 @@ jobs:
               pass
           else:
               card.update(status='IDLE_CACHED_VERIFIED' if card['cache_hit'] else 'VERIFIED_NEW_FULL13_COMPUTATION',
-                          decision='REJECT_FOR_LIVE_DISCOVERY_ONLY',reason_code=None,economics_proven=True,
+                          decision='REJECT_FOR_LIVE_DISCOVERY_ONLY',reason_code=None,
+                          economics_proven=False,execution_economics_proven=False,
+                          modelled_stress_economics_verified=True,
+                          economics_scope='MODELLED_20_25_40BPS_NO_FUNDING_SLIPPAGE_FILLS',
+                          owner_required_16bps_present='net16_usdt' in r['discovery'],
+                          funding_modeled=bool(r.get('funding_modeled',False)),
+                          slippage_modeled=bool(r.get('slippage_modeled',False)),
+                          maker_fill_proven=bool(r.get('maker_fills_proven',False)),
                           receipt_sha256=r['receipt_sha256'],
                           metrics={'discovery':r['discovery'],'may_aux':r['may_aux'],
                                    'by_week':r['by_week'],'by_symbol':r['by_symbol'],
