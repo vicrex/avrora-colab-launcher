@@ -28,7 +28,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_SHA: "e5b1e636e2c67fc97525c1767be2da617c1a7bc1"
+      PRIVATE_SHA: "011272034ea91bb49222bf41ffd6a7b1dd464bd6"
     steps:
       - name: Checkout public launcher
         uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: e5b1e636e2c67fc97525c1767be2da617c1a7bc1
+          ref: 011272034ea91bb49222bf41ffd6a7b1dd464bd6
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -69,13 +69,13 @@ jobs:
           grep -q '"executed_action": false' "$RUNNER_TEMP/preflight.json"
           grep -q '"holdout": "SEALED"' "$RUNNER_TEMP/preflight.json"
 
-      - name: Prove both XSEC entrypoints block before raw source open
+      - name: Prove XSEC entrypoints and imported callables block before raw source open
         shell: bash
         run: |
           set -euo pipefail
           cd private_code
           python -m unittest research.strategy_search.test_xsec_source_feasibility -v 2>&1 | tee "$RUNNER_TEMP/tests.log"
-          grep -q "Ran 5 tests" "$RUNNER_TEMP/tests.log"
+          grep -q "Ran 7 tests" "$RUNNER_TEMP/tests.log"
           grep -q "^OK$" "$RUNNER_TEMP/tests.log"
 
       - name: Destroy private checkout and transient logs
