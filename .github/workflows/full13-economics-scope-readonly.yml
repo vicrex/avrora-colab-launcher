@@ -2,6 +2,13 @@ name: AVRORA FULL13 economics-scope fail-closed verification
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/avrora-private-wave.yml"
+      - "tests/test_full13_economics_scope.py"
+      - ".github/workflows/full13-economics-scope-readonly.yml"
   push:
     branches:
       - research/full13-economics-scope-failclosed-20261106
@@ -15,6 +22,7 @@ permissions:
 
 jobs:
   scope-verification:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     strategy:
       fail-fast: false
       matrix:
