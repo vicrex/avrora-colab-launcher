@@ -1,14 +1,9 @@
 name: PsyAI one-shot CPU Colab using existing AVRORA Google authorization
 
 on:
+  # Manual-only: avoid daily failed Colab probes and duplicate PsyAI automation.
+  # Run on explicit operator request only after checking the model/transport gate.
   workflow_dispatch:
-  # Daily bounded Colab CPU proof. No private PsyAI source or client data.
-  # GitHub Actions cron can be delayed; free Colab capacity is not guaranteed.
-  schedule:
-    - cron: '17 5 * * *'
-  # No push-triggered heavy CPU launch. Only explicit dispatch or the
-  # existing daily schedule may start it; shared concurrency serializes it
-  # with the private application Colab CPU acceptance.
 
 permissions:
   contents: read
