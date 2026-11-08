@@ -1,11 +1,9 @@
 name: PsyAI private source Colab CPU acceptance
 
 on:
+  # Manual-only: private Colab acceptance is an explicit release gate,
+  # not a daily job; keep fail-closed proof and cleanup steps unchanged.
   workflow_dispatch:
-  schedule:
-    - cron: '41 8 * * *'
-  # Avoid implicit heavyweight checkout when public launcher files change.
-  # Explicit dispatch and the approved schedule are the only triggers.
 
 permissions:
   contents: read
