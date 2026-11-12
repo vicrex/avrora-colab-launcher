@@ -1,0 +1,89 @@
+name: AVRORA FULL13 economics-scope fail-closed verification
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/avrora-private-wave.yml"
+      - "tests/test_full13_economics_scope.py"
+      - ".github/workflows/full13-economics-scope-readonly.yml"
+  push:
+    branches:
+      - research/full13-economics-scope-failclosed-20261106
+    paths:
+      - ".github/workflows/avrora-private-wave.yml"
+      - "tests/test_full13_economics_scope.py"
+      - ".github/workflows/full13-economics-scope-readonly.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  scope-verification:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PRIVATE_SHA: "69643a36254f90a95348edd83e4d0639b44d2401"
+    steps:
+      - name: Checkout public economics-scope change
+        uses: actions/checkout@v4
+
+      - name: Verify existing read-only private-code key
+        shell: bash
+        env:
+          HAVE_CODE_KEY: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+        run: |
+          set -euo pipefail
+          test "$HAVE_CODE_KEY" = "true"
+
+      - name: Checkout immutable private source-preflight code
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: 69643a36254f90a95348edd83e4d0639b44d2401
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Invoke fail-closed P742 source preflight before tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd private_code
+          python -m research.strategy_search.avrora_source_preflight \
+            --source P742_DISCOVERY --action reuse \
+            --canonical-read-confirmed --current-source-confirmed \
+            | tee "$RUNNER_TEMP/preflight.json"
+          grep -q '"status": "READY_TO_FETCH_KNOWN_SOURCE_READ_ONLY"' "$RUNNER_TEMP/preflight.json"
+          grep -q '"executed_action": false' "$RUNNER_TEMP/preflight.json"
+          grep -q '"holdout": "SEALED"' "$RUNNER_TEMP/preflight.json"
+
+      - name: Run FULL13 economics-scope anti-regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_full13_economics_scope -v 2>&1 | tee "$RUNNER_TEMP/tests.log"
+          grep -q "Ran 2 tests" "$RUNNER_TEMP/tests.log"
+          grep -q "^OK$" "$RUNNER_TEMP/tests.log"
+
+      - name: Destroy private checkout and transient logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf "$GITHUB_WORKSPACE/private_code"
+          rm -f "$RUNNER_TEMP/preflight.json" "$RUNNER_TEMP/tests.log"
