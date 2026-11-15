@@ -53,6 +53,7 @@ function doGet() {
 }
 function doPost(e) {
   var lock = null;
+  var stage = "VALIDATE_ENVELOPE";
   try {
     if (!e || !e.postData || typeof e.postData.contents !== "string"
         || e.postData.contents.length > 5600000) {
@@ -68,6 +69,7 @@ function doPost(e) {
         || !/^[A-Za-z0-9+/]*={0,2}$/.test(env.body_base64)) {
       throw new Error("BLOCKED_INVALID_ENVELOPE");
     }
+    stage = "CHECK_HMAC";
     var secret = PropertiesService.getScriptProperties().getProperty(AVRORA_KEY_PROPERTY);
     if (!secret || !/^[a-f0-9]{64}$/.test(secret)) {
       throw new Error("BLOCKED_HMAC_NOT_CONFIGURED");
@@ -77,6 +79,7 @@ function doPost(e) {
     if (!avroraSafeEqual_(expected, env.signature)) {
       throw new Error("BLOCKED_INVALID_HMAC");
     }
+    stage = "VERIFY_REPORT";
     var bytes = Utilities.base64Decode(env.body_base64);
     if (bytes.length > 4000000 || bytes.length === 0
         || avroraHex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes))
@@ -105,10 +108,12 @@ function doPost(e) {
       }
       seenCandidateIds[cid] = true;
     }
+    stage = "DRIVE_LOCK_AND_FOLDER";
     lock = LockService.getScriptLock();
     if (!lock.tryLock(20000)) throw new Error("BLOCKED_CONCURRENT_WRITE");
     var folder = DriveApp.getFolderById(AVRORA_FOLDER_ID);
     var name = "AVRORA_PRIVATE_MULTIFAMILY_" + env.run_id + ".json";
+    stage = "DRIVE_CREATE_OR_REUSE";
     var iterator = folder.getFilesByName(name);
     var entry;
     if (iterator.hasNext()) {
@@ -117,6 +122,7 @@ function doPost(e) {
     } else {
       entry = folder.createFile(Utilities.newBlob(bytes, "application/json", name));
     }
+    stage = "DRIVE_READBACK";
     var back = entry.getBlob().getBytes();
     var backSha = avroraHex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, back));
     if (back.length !== bytes.length || backSha !== env.sha256) {
@@ -125,8 +131,19 @@ function doPost(e) {
     return avroraReply_({status: "PASS_PRIVATE_DRIVE_READBACK",
                          run_id: env.run_id, sha256: backSha, bytes: back.length});
   } catch (err) {
-    // Deliberately never log input payloads, key, Drive ID or failure stack.
-    // A non-PASS status means GitHub must fail the job closed.
+    // OWNER-ONLY Apps Script execution log: bounded diagnostic codes, never
+    // raw exception text, tokens, folder IDs, signed envelopes, or private data.
+    // The HTTP response MUST remain generic to avoid creating a public oracle.
+    var safeMessage = String(err && err.message || "").toLowerCase();
+    var safeKind = "OTHER";
+    if (/storage|quota|too many times|exceeded/.test(safeMessage)) {
+      safeKind = "QUOTA_OR_STORAGE";
+    } else if (/permission|forbidden|authorization|access denied/.test(safeMessage)) {
+      safeKind = "ACCESS";
+    } else if (/timeout|service unavailable|temporar/.test(safeMessage)) {
+      safeKind = "TRANSIENT";
+    }
+    console.error("AVRORA_GAS_OWNER_AUDIT stage=" + stage + " kind=" + safeKind);
     return avroraReply_({status: "BLOCKED_PRIVATE_DRIVE_DELIVERY"});
   } finally {
     if (lock) {
