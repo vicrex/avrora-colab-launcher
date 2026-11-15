@@ -25,7 +25,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_CODE_SHA: 501e231dba924702ecf4055390c2f9460f20aeea
+      PRIVATE_CODE_SHA: a388d74e631155e2f4a862df6aad93544a04bcb2
     steps:
       - name: Verify read-only private source credential
         shell: bash
@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: 501e231dba924702ecf4055390c2f9460f20aeea
+          ref: a388d74e631155e2f4a862df6aad93544a04bcb2
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -89,7 +89,17 @@ jobs:
           if [[ "$failed" -ne 0 ]]; then
             exit 3
           fi
-          echo 'PASS_PRIVATE_GRAPH_INGEST_PR76_OFFLINE_GATE'
+          # Existing offline gate now validates the targeted PR#124 graph-capacity
+          # regression, in addition to the original source-pinned suite above.
+          if python -m unittest discover -s tests -p 'test_knowledge_space.py' -v >"$RUNNER_TEMP/test_knowledge_space_pr124.log" 2>&1; then
+            echo 'PASS_PRIVATE_GRAPH_PR124_NATIVE_TESTS'
+          else
+            grep -E '^(Ran |FAILED|FAIL:|ERROR:)' "$RUNNER_TEMP/test_knowledge_space_pr124.log" | head -18 || true
+            echo 'BLOCKED_PRIVATE_GRAPH_PR124_NATIVE_TESTS'
+            exit 4
+          fi
+          rm -f "$RUNNER_TEMP/test_knowledge_space_pr124.log"
+          echo 'PASS_PRIVATE_GRAPH_INGEST_PR124_OFFLINE_GATE'
 
       - name: Destroy private checkout and temporary logs
         if: ${{ always() }}
@@ -97,4 +107,5 @@ jobs:
         run: |
           rm -rf "$GITHUB_WORKSPACE/private_code"
           rm -f "$RUNNER_TEMP"/research_insight_map_test_multifamily_*.log
+          rm -f "$RUNNER_TEMP/test_knowledge_space_pr124.log"
 
