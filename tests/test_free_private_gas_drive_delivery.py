@@ -100,6 +100,18 @@ class FreeDriveGasTests(unittest.TestCase):
         self.assertNotIn("createTrigger(", js)
         self.assertNotIn("ScriptApp.newTrigger(", js)
 
+    def test_gas_receiver_logs_only_owner_visible_sanitized_stage(self):
+        js = RECEIVER.read_text(encoding="utf-8")
+        self.assertIn('var stage = "VALIDATE_ENVELOPE";', js)
+        for stage in ("CHECK_HMAC", "VERIFY_REPORT", "DRIVE_LOCK_AND_FOLDER",
+                      "DRIVE_CREATE_OR_REUSE", "DRIVE_READBACK"):
+            self.assertIn('stage = "' + stage + '";', js)
+        self.assertIn('console.error("AVRORA_GAS_OWNER_AUDIT stage="', js)
+        self.assertIn('kind=" + safeKind', js)
+        self.assertIn('return avroraReply_({status: "BLOCKED_PRIVATE_DRIVE_DELIVERY"});', js)
+        self.assertNotIn("console.error(err)", js)
+        self.assertNotIn("console.error(safeMessage)", js)
+
     def test_public_64_case_job_prefers_free_gas_and_never_publishes_private_json(self):
         yml = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("AVRORA_GAS_REPORT_WEBAPP_URL", yml)
