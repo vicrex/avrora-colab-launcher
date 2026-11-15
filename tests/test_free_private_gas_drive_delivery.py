@@ -11,7 +11,7 @@ from pathlib import Path
 import unittest
 
 from tools.private_gas_drive_delivery import (
-    payload_and_ack, signing_message, validate_url,
+    payload_and_ack, signing_message, validate_url, classify_receiver_ack,
 )
 from tools.private_multifamily_drive_delivery import canon
 
@@ -99,6 +99,35 @@ class FreeDriveGasTests(unittest.TestCase):
         self.assertLess(js.index("BLOCKED_INVALID_HMAC"), js.index("folder.createFile("))
         self.assertNotIn("createTrigger(", js)
         self.assertNotIn("ScriptApp.newTrigger(", js)
+
+    def test_receiver_ack_diagnostic_bounded_no_secret_and_exact_validation(self):
+        sample = frozen_sample()
+        _payload, ack = payload_and_ack(sample, "40181486935", KEY)
+        valid = {"status": "PASS_PRIVATE_DRIVE_READBACK", "run_id": "40181486935",
+                 "sha256": ack["sha256"], "bytes": ack["bytes"]}
+        self.assertEqual(classify_receiver_ack(valid, "40181486935", ack), "PASS")
+        self.assertEqual(
+            classify_receiver_ack({"status": "BLOCKED_PRIVATE_DRIVE_DELIVERY",
+                                   "private_key": KEY}, "40181486935", ack),
+            "OWNER_GAS_RECEIVER_REJECTED")
+        self.assertEqual(classify_receiver_ack({"unexpected": "SECRET"}, "40181486935", ack),
+                         "UNKNOWN_ACK_STATUS")
+        self.assertEqual(classify_receiver_ack("SECRET", "40181486935", ack),
+                         "NON_OBJECT_ACK")
+        self.assertEqual(classify_receiver_ack({**valid, "bytes": 1}, "40181486935", ack),
+                         "ACK_FIELDS_MISMATCH")
+
+    def test_gas_receiver_logs_only_owner_visible_sanitized_stage(self):
+        js = RECEIVER.read_text(encoding="utf-8")
+        self.assertIn('var stage = "VALIDATE_ENVELOPE";', js)
+        for stage in ("CHECK_HMAC", "VERIFY_REPORT", "DRIVE_LOCK_AND_FOLDER",
+                      "DRIVE_CREATE_OR_REUSE", "DRIVE_READBACK"):
+            self.assertIn('stage = "' + stage + '";', js)
+        self.assertIn('console.error("AVRORA_GAS_OWNER_AUDIT stage="', js)
+        self.assertIn('kind=" + safeKind', js)
+        self.assertIn('return avroraReply_({status: "BLOCKED_PRIVATE_DRIVE_DELIVERY"});', js)
+        self.assertNotIn("console.error(err)", js)
+        self.assertNotIn("console.error(safeMessage)", js)
 
     def test_public_64_case_job_prefers_free_gas_and_never_publishes_private_json(self):
         yml = WORKFLOW.read_text(encoding="utf-8")
