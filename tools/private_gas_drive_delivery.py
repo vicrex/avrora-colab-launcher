@@ -54,6 +54,20 @@ def payload_and_ack(raw: bytes, run_id: str, secret_hex: str) -> tuple[dict, dic
     return envelope, ack
 
 
+def classify_receiver_ack(payload: object, run_id: str, expected: dict) -> str:
+    """Bounded public diagnostic only; NEVER include response text or credentials."""
+    if not isinstance(payload, dict):
+        return "NON_OBJECT_ACK"
+    if payload.get("status") == "BLOCKED_PRIVATE_DRIVE_DELIVERY":
+        return "OWNER_GAS_RECEIVER_REJECTED"
+    if payload.get("status") != "PASS_PRIVATE_DRIVE_READBACK":
+        return "UNKNOWN_ACK_STATUS"
+    if (payload.get("run_id") != run_id or payload.get("sha256") != expected["sha256"]
+            or payload.get("bytes") != expected["bytes"]):
+        return "ACK_FIELDS_MISMATCH"
+    return "PASS"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
@@ -86,9 +100,10 @@ def main() -> None:
         response.raise_for_status()
         stage = "ACK"
         result = response.json()
-        if (not isinstance(result, dict) or result.get("status") != "PASS_PRIVATE_DRIVE_READBACK"
-                or result.get("run_id") != run_id or result.get("sha256") != ack["sha256"]
-                or result.get("bytes") != ack["bytes"]):
+        diagnostic = classify_receiver_ack(result, run_id, ack)
+        if diagnostic != "PASS":
+            # Strict enumeration: safe in a PUBLIC Action log, unlike response body.
+            print("AVRORA_GAS_SAFE_DIAG " + diagnostic)
             raise ValueError("unverified receipt")
         Path(opts.receipt).write_bytes(canon(ack) + b"\n")
     except Exception:
