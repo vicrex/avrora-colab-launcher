@@ -1,4 +1,4 @@
-name: AVRORA private graph-ingest PR76 offline gate
+name: AVRORA private graph-ingest offline gate
 
 on:
   workflow_dispatch:
@@ -25,7 +25,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_CODE_SHA: b4deec8e805af35690f424695ba57b90e7c2f48a
+      PRIVATE_CODE_SHA: 2066ff0efb05715d93286cc89bb588c080b3e4ba
     steps:
       - name: Verify read-only private source credential
         shell: bash
@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: b4deec8e805af35690f424695ba57b90e7c2f48a
+          ref: 2066ff0efb05715d93286cc89bb588c080b3e4ba
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -89,7 +89,7 @@ jobs:
           if [[ "$failed" -ne 0 ]]; then
             exit 3
           fi
-          # Existing offline gate now validates the targeted PR#124 graph-capacity
+          # Existing offline gate now validates the merged PR#124 graph-capacity
           # regression, in addition to the original source-pinned suite above.
           if python -m unittest discover -s tests -p 'test_knowledge_space.py' -v >"$RUNNER_TEMP/test_knowledge_space_pr124.log" 2>&1; then
             echo 'PASS_PRIVATE_GRAPH_PR124_NATIVE_TESTS'
