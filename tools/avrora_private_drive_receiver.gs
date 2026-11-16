@@ -54,6 +54,7 @@ function doGet() {
 function doPost(e) {
   var lock = null;
   var stage = "VALIDATE_ENVELOPE";
+  var authenticated = false;
   try {
     if (!e || !e.postData || typeof e.postData.contents !== "string"
         || e.postData.contents.length > 5600000) {
@@ -79,6 +80,7 @@ function doPost(e) {
     if (!avroraSafeEqual_(expected, env.signature)) {
       throw new Error("BLOCKED_INVALID_HMAC");
     }
+    authenticated = true;
     stage = "VERIFY_REPORT";
     var bytes = Utilities.base64Decode(env.body_base64);
     if (bytes.length > 4000000 || bytes.length === 0
@@ -144,6 +146,13 @@ function doPost(e) {
       safeKind = "TRANSIENT";
     }
     console.error("AVRORA_GAS_OWNER_AUDIT stage=" + stage + " kind=" + safeKind);
+    // ONLY a caller with a verified HMAC can see these ENUMERATED codes.
+    // No Drive file names, URLs, report contents, exceptions or keys are returned.
+    // Unauthenticated requests keep the exact generic legacy reply.
+    if (authenticated) {
+      return avroraReply_({status: "BLOCKED_PRIVATE_DRIVE_DELIVERY",
+                           diag_stage: stage, diag_kind: safeKind});
+    }
     return avroraReply_({status: "BLOCKED_PRIVATE_DRIVE_DELIVERY"});
   } finally {
     if (lock) {
