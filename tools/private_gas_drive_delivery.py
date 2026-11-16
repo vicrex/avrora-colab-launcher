@@ -59,6 +59,15 @@ def classify_receiver_ack(payload: object, run_id: str, expected: dict) -> str:
     if not isinstance(payload, dict):
         return "NON_OBJECT_ACK"
     if payload.get("status") == "BLOCKED_PRIVATE_DRIVE_DELIVERY":
+        # An authenticated caller may receive bounded stage/kind enums.
+        # Never echo arbitrary server strings into a PUBLIC GitHub log.
+        stage = payload.get("diag_stage")
+        kind = payload.get("diag_kind")
+        safe_stages = {"VERIFY_REPORT", "DRIVE_LOCK_AND_FOLDER",
+                       "DRIVE_CREATE_OR_REUSE", "DRIVE_READBACK"}
+        safe_kinds = {"OTHER", "ACCESS", "QUOTA_OR_STORAGE", "TRANSIENT"}
+        if stage in safe_stages and kind in safe_kinds:
+            return "OWNER_GAS_REJECTED_" + stage + "_" + kind
         return "OWNER_GAS_RECEIVER_REJECTED"
     if payload.get("status") != "PASS_PRIVATE_DRIVE_READBACK":
         return "UNKNOWN_ACK_STATUS"
