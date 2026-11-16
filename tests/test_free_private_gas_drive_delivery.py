@@ -117,6 +117,37 @@ class FreeDriveGasTests(unittest.TestCase):
         self.assertEqual(classify_receiver_ack({**valid, "bytes": 1}, "40181486935", ack),
                          "ACK_FIELDS_MISMATCH")
 
+    def test_authenticated_bounded_response_and_public_safe_enums(self):
+        raw = frozen_sample()
+        _, ack = payload_and_ack(raw, "40181486935", KEY)
+        for stage, kind in (
+            ("VERIFY_REPORT", "OTHER"),
+            ("DRIVE_LOCK_AND_FOLDER", "ACCESS"),
+            ("DRIVE_CREATE_OR_REUSE", "QUOTA_OR_STORAGE"),
+            ("DRIVE_READBACK", "TRANSIENT"),
+        ):
+            self.assertEqual(classify_receiver_ack({
+                "status": "BLOCKED_PRIVATE_DRIVE_DELIVERY",
+                "diag_stage": stage, "diag_kind": kind
+            }, "40181486935", ack), "OWNER_GAS_REJECTED_" + stage + "_" + kind)
+        for bad in (
+            {"diag_stage": "CHECK_HMAC", "diag_kind": "ACCESS"},
+            {"diag_stage": "secrets", "diag_kind": "ACCESS"},
+            {"diag_stage": "DRIVE_READBACK", "diag_kind": KEY},
+        ):
+            self.assertEqual(classify_receiver_ack({
+                "status": "BLOCKED_PRIVATE_DRIVE_DELIVERY", **bad
+            }, "40181486935", ack), "OWNER_GAS_RECEIVER_REJECTED")
+        js = RECEIVER.read_text(encoding="utf-8")
+        self.assertIn("var authenticated = false;", js)
+        self.assertIn("authenticated = true;", js)
+        self.assertLess(js.index("BLOCKED_INVALID_HMAC"), js.index("authenticated = true;"))
+        self.assertIn("if (authenticated) {", js)
+        self.assertIn("diag_stage: stage, diag_kind: safeKind", js)
+        self.assertIn('return avroraReply_({status: "BLOCKED_PRIVATE_DRIVE_DELIVERY"});', js)
+        self.assertNotIn("diag_message:", js)
+        self.assertNotIn("console.error(err)", js)
+
     def test_gas_receiver_logs_only_owner_visible_sanitized_stage(self):
         js = RECEIVER.read_text(encoding="utf-8")
         self.assertIn('var stage = "VALIDATE_ENVELOPE";', js)
