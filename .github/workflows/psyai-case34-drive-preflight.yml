@@ -1,0 +1,47 @@
+name: PsyAI CASE34 private Drive read-only preflight
+on:
+  push:
+    branches: [psyai-case34-private-e2e-20261118]
+    paths: ['.github/workflows/psyai-case34-drive-preflight.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: psyai-private-case34-drive-preflight
+  cancel-in-progress: false
+jobs:
+  source-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HAS_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check existing ADC only
+        run: |
+          if [ "$HAS_ADC" != "true" ]; then exit 2; fi
+      - name: Restore temporary ADC
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Install Google OAuth libraries
+        run: python -m pip install -q google-auth requests
+      - name: Check owner-only CASE34 Drive file hash without printing content
+        run: python tools/psyai_case34_private_drive_preflight.py
+      - name: Upload only boolean/size receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-case34-private-access-${{ github.run_id }}
+          path: psyai-case34-drive-access.json
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Delete temporary credentials
+        if: ${{ always() }}
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then rm -f "$GOOGLE_APPLICATION_CREDENTIALS"; fi
