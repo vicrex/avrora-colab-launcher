@@ -1,0 +1,113 @@
+name: AVRORA RETEST5319 one-shot full13 economic diagnostic (NO_TRADE)
+on:
+  push:
+    branches:
+      - audit/retest-5319-once-20261117
+    paths:
+      - '.github/workflows/avrora-retest5319-one-shot.yml'
+permissions:
+  contents: read
+concurrency:
+  group: avrora-retest5319-one-shot-20261117
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Pinned FULL13 source one-candidate audit only
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PRIVATE_CODE_SHA: "3b4496c796478281397bcc9629b1bda5e2156b46"
+      PRIVATE_DATA_SHA: "3352275492bf192dd4c6d7abfcf9bbaae19ac983"
+    steps:
+      - name: Credential availability gate (no fallback to public/no-source)
+        env:
+          HAVE_CODE: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+          HAVE_DATA: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+        run: |
+          set -euo pipefail
+          [[ "$HAVE_CODE" = "true" && "$HAVE_DATA" = "true" ]] || { echo "BLOCKED_READONLY_SOURCE_KEYS"; exit 2; }
+      - name: Checkout immutable private research code
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: 3b4496c796478281397bcc9629b1bda5e2156b46
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Checkout immutable private 220-M15-preweek source (NO HOLDOUT)
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
+          path: private_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqKLsabgH5C9okWi0dh2l9GKJl"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify exact private repository commits
+        run: |
+          set -euo pipefail
+          test "$(git -C private_code rev-parse HEAD)" = "$PRIVATE_CODE_SHA"
+          test "$(git -C private_source rev-parse HEAD)" = "$PRIVATE_DATA_SHA"
+      - name: Targeted regression tests, no exchange
+        working-directory: private_code
+        run: python -m unittest research.strategy_search.test_retest_short_full13_audit -v
+      - name: Exactly one FULL13 candidate plus independent signal/exit CHECK2 and controls
+        working-directory: private_code
+        run: |
+          python -m research.strategy_search.retest_short_full13_audit \
+            --private-data-checkout ../private_source \
+            --output ../private_retest5319_full13_audit.json
+      - name: Publish small non-sensitive economic summary only
+        run: |
+          python - <<'PY'
+          import hashlib,json,pathlib
+          p=pathlib.Path('private_retest5319_full13_audit.json')
+          x=json.loads(p.read_text('utf-8'))
+          digest=x.pop('receipt_sha256')
+          actual=hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+          if (digest!=actual or x.get('source_sha256')!='7e1bed08982de6e5ff1ec60cbd8afef68067298adcffd590149b43a099dbb297'
+            or x.get('source_rows')!=64224 or x.get('real')!='OFF' or x.get('holdout')!='SEALED'
+            or x.get('oos_proven') is not False or x.get('maker_fill_proven') is not False
+            or x.get('signal_exit_check2')!='PASS_INDEPENDENT_NARROW_RULE_AND_LEGACY_PATH_PARITY'
+            or x.get('matched_bearish_control',{}).get('20',{}).get('replicates')!=150):
+              raise SystemExit('BLOCKED_FULL13_AUDIT_RECEIPT')
+          horizons=x['horizons']
+          summary={'schema':'AVRORA_RETEST_FULL13_PUBLIC_SCOPE_ONLY',
+             'private_code_sha':'3b4496c796478281397bcc9629b1bda5e2156b46',
+             'private_data_sha':'3352275492bf192dd4c6d7abfcf9bbaae19ac983',
+             'full_source_sha256':x['source_sha256'],
+             'private_result_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
+             'source_rows_discovery':x['source_rows'],
+             'signals':x['signals'],'independent_check2':'PASS',
+             'legacy_13_candles':{k:{'model_net_usdt':horizons['legacy13'][k]['net_usdt'],
+                'model_trades':horizons['legacy13'][k]['admitted_trades']} for k in ('20','40')},
+             'literal_12_candles':{k:{'model_net_usdt':horizons['exact12'][k]['net_usdt'],
+                'model_trades':horizons['exact12'][k]['admitted_trades']} for k in ('20','40')},
+             'bearish_null':x['matched_bearish_control'],
+             'oos':False,'fills':False,'real':'OFF','holdout':'SEALED',
+             'decision':'SHADOW_ONLY_NO_PROFIT_ADMISSION'}
+          pathlib.Path('retest_public_summary.json').write_text(json.dumps(summary,sort_keys=True)+'\n')
+          print('PASS_PINNED_FULL13_RETEST5319_NO_TRADE',json.dumps(summary,sort_keys=True))
+          PY
+      - name: Upload safe summary artifact only
+        uses: actions/upload-artifact@v4
+        if: ${{ success() }}
+        with:
+          name: avrora-retest5319-full13-summary-${{ github.run_id }}
+          path: retest_public_summary.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Destroy private code, full source and detailed private report
+        if: ${{ always() }}
+        run: |
+          rm -rf private_code private_source
+          rm -f private_retest5319_full13_audit.json
