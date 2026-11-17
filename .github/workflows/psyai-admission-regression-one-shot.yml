@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: fix/psyai-case34-final-admission-20261117
+          ref: perf/psyai-case34-bounded-20261117
           path: private_psyai
           fetch-depth: 1
           persist-credentials: false
@@ -44,12 +44,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Verify prompts, timing, native PDF and DOCX without Gemma
+      - name: Three checks: syntax, atomic safety, and full regression without Gemma
         shell: bash
         run: |
           set +e
           cd private_psyai
-          python -m py_compile analysis_bundle.py analysis_bundle_quality.py cognitive_evidence.py cognitive_evidence_report.py deep_analysis_report.py analysis_timing_report.py analysis_bundle_views.py tests/test_case34_final_admission_regression.py tests/test_case34_source_attribution_and_symptom.py tests/test_analysis_timing_report.py tests/test_case34_prompt_contracts.py > ../private_test_output.log 2>&1
+          python -m py_compile analysis_bundle.py analysis_bundle_quality.py analysis_time_budget.py analysis_bundle_workflow.py local_engine.py deep_analysis_api.py tests/test_case34_call_count_optimization.py cognitive_evidence.py cognitive_evidence_report.py deep_analysis_report.py analysis_timing_report.py analysis_bundle_views.py tests/test_case34_final_admission_regression.py tests/test_case34_source_attribution_and_symptom.py tests/test_analysis_timing_report.py tests/test_case34_prompt_contracts.py > ../private_test_output.log 2>&1
           syntax=$?
           if [ "$syntax" -ne 0 ]; then
             echo PSYAI_PATCH_SYNTAX_FAIL
@@ -78,8 +78,16 @@ jobs:
             echo PSYAI_PATCH_DEPS_BLOCKED
             exit 2
           fi
+          echo PSYAI_AUDIT_1_PYTHON_SYNTAX_PASS
+          PYTHONHASHSEED=17 python -m pytest -q tests/test_case34_call_count_optimization.py tests/test_analysis_bundle_premises.py > ../private_focus_output.log 2>&1
+          focus_result=$?
+          if [ "$focus_result" -ne 0 ]; then
+            echo PSYAI_AUDIT_2_ATOMIC_SAFETY_FAIL
+            exit 2
+          fi
+          echo PSYAI_AUDIT_2_ATOMIC_SAFETY_PASS
           echo PSYAI_KNOWN_PREEXISTING_QUALITY_TEST_FAILS_DESELECTED=5
-          python -m pytest -q tests/test_analysis_timing_report.py tests/test_case34_source_attribution_and_symptom.py tests/test_case34_final_admission_regression.py tests/test_case34_prompt_contracts.py tests/test_v_shared_schema.py tests/test_atomic_v15_transport.py tests/test_analysis_bundle_premises.py tests/test_analysis_bundle_quality.py --deselect=tests/test_analysis_bundle_quality.py::test_decoder_contract_is_visible_in_actual_messages_and_counted_once --deselect=tests/test_analysis_bundle_quality.py::test_insight_reuse_generates_no_second_meaning_and_preserves_rejection --deselect=tests/test_analysis_bundle_quality.py::test_semantic_rubric_failure_withholds_score_without_mutating_input --deselect=tests/test_analysis_bundle_quality.py::test_compact_review_rejects_false_coverage_and_keeps_application_ids --deselect=tests/test_analysis_bundle_quality.py::test_explicit_risk_rejection_becomes_a_visible_claim_issue --junitxml=../synthetic-junit.xml > ../private_test_output.log 2>&1
+          PYTHONHASHSEED=29 python -m pytest -q tests/test_case34_call_count_optimization.py tests/test_analysis_timing_report.py tests/test_case34_source_attribution_and_symptom.py tests/test_case34_final_admission_regression.py tests/test_case34_prompt_contracts.py tests/test_v_shared_schema.py tests/test_atomic_v15_transport.py tests/test_analysis_bundle_premises.py tests/test_analysis_bundle_quality.py --deselect=tests/test_analysis_bundle_quality.py::test_decoder_contract_is_visible_in_actual_messages_and_counted_once --deselect=tests/test_analysis_bundle_quality.py::test_insight_reuse_generates_no_second_meaning_and_preserves_rejection --deselect=tests/test_analysis_bundle_quality.py::test_semantic_rubric_failure_withholds_score_without_mutating_input --deselect=tests/test_analysis_bundle_quality.py::test_compact_review_rejects_false_coverage_and_keeps_application_ids --deselect=tests/test_analysis_bundle_quality.py::test_explicit_risk_rejection_becomes_a_visible_claim_issue --junitxml=../synthetic-junit.xml > ../private_test_output.log 2>&1
           result=$?
           if [ "$result" -ne 0 ]; then
             python - <<'PY'
@@ -102,9 +110,7 @@ jobs:
           PY
           fi
           if [ "$result" -eq 0 ]; then
-            echo PSYAI_AUDIT_PASS_1_SYNTAX
-            echo PSYAI_AUDIT_PASS_2_SEMANTIC_CONTRACTS
-            echo PSYAI_AUDIT_PASS_3_FAIL_CLOSED_LOGIC
+            echo PSYAI_AUDIT_3_FULL_REGRESSION_PASS
             echo PSYAI_PROMPT_AND_ADMISSION_REGRESSIONS_PASS
           else
             echo PSYAI_THREE_PASS_AUDIT_FAILED_SEE_NAMED_TESTS
@@ -116,4 +122,4 @@ jobs:
         shell: bash
         run: |
           rm -rf private_psyai
-          rm -f private_test_output.log synthetic-junit.xml spec_cli_help_private.log
+          rm -f private_test_output.log private_focus_output.log synthetic-junit.xml spec_cli_help_private.log
