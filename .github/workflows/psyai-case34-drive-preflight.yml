@@ -2,7 +2,7 @@ name: PsyAI CASE34 private Drive read-only preflight
 on:
   push:
     branches: [psyai-case34-private-e2e-20261118]
-    paths: ['.github/workflows/psyai-case34-drive-preflight.yml']
+    paths: ['.github/workflows/psyai-case34-drive-preflight.yml', 'tools/psyai_case34_private_drive_preflight.py']
   workflow_dispatch:
 permissions:
   contents: read
