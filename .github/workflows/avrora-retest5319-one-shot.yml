@@ -19,7 +19,7 @@ jobs:
     env:
       REAL: "OFF"
       HOLDOUT: "SEALED"
-      PRIVATE_CODE_SHA: "c252374237bfb542a11f56d3daa307c591d208fe"
+      PRIVATE_CODE_SHA: "68de9a7672702799bc6201c9e4960f34be82e5d7"
       PRIVATE_DATA_SHA: "3352275492bf192dd4c6d7abfcf9bbaae19ac983"
     steps:
       - name: Credential availability gate (no fallback to public/no-source)
@@ -33,7 +33,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/AVRORA
-          ref: c252374237bfb542a11f56d3daa307c591d208fe
+          ref: 68de9a7672702799bc6201c9e4960f34be82e5d7
           path: private_code
           persist-credentials: false
           ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
@@ -85,7 +85,7 @@ jobs:
               raise SystemExit('BLOCKED_FULL13_AUDIT_RECEIPT')
           horizons=x['horizons']
           summary={'schema':'AVRORA_RETEST_FULL13_PUBLIC_SCOPE_ONLY',
-             'private_code_sha':'c252374237bfb542a11f56d3daa307c591d208fe',
+             'private_code_sha':'68de9a7672702799bc6201c9e4960f34be82e5d7',
              'private_data_sha':'3352275492bf192dd4c6d7abfcf9bbaae19ac983',
              'full_source_sha256':x['source_sha256'],
              'private_result_sha256':hashlib.sha256(p.read_bytes()).hexdigest(),
