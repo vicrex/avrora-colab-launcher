@@ -75,7 +75,7 @@ jobs:
                       if re.fullmatch(r'test_[a-z0-9_]{1,100}',name):
                           kind='ASSERTION' if t.find('failure') is not None else 'ERROR'
                           text=(t.find('failure') or t.find('error')).text or ''
-                          line=re.search(r'test_case34_final_admission_regression\\.py:(\\d+):',text)
+                          line=re.search(r'test_case34_final_admission_regression\.py:(\d+):',text)
                           print('PSYAI_SYNTHETIC_TEST_FAIL',name,kind,
                                 'source_line='+line.group(1) if line else 'source_line=UNKNOWN')
           except Exception:
