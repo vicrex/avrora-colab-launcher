@@ -13,6 +13,10 @@ result={"schema":"PSYAI_REAL_E5_COLAB_V1","status":"BLOCKED",
 def step(name,ok,details=None):
     result["stages"].append({"stage":name,"pass":bool(ok),**(details or {})})
 try:
+ import importlib.util,subprocess
+ if importlib.util.find_spec("transformers") is None:
+    install=subprocess.run([sys.executable,"-m","pip","install","-q","transformers>=4.50,<5","safetensors"],check=False,timeout=180)
+    assert install.returncode==0,"TRANSFORMERS_INSTALL_FAILED"
  import numpy as np
  import torch
  from transformers import AutoModel,AutoTokenizer
