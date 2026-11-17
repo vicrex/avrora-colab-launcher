@@ -1,0 +1,137 @@
+name: AVRORA SESSION_ONLY one-shot fixed-window research (NO_TRADE)
+on:
+  push:
+    branches:
+      - audit/session-only-one-shot-20261117
+    paths:
+      - '.github/workflows/avrora-session-only-one-shot.yml'
+permissions:
+  contents: read
+concurrency:
+  group: avrora-session-only-20261117
+  cancel-in-progress: false
+jobs:
+  one-shot:
+    name: Frozen 13-window full13 paper audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PRIVATE_CODE_SHA: "44ee4ed967afeeacb0c1e5d931e794606f0e2a0e"
+      PRIVATE_SOURCE_SHA: "3352275492bf192dd4c6d7abfcf9bbaae19ac983"
+    steps:
+      - name: Require already connected READ ONLY source and code keys
+        env:
+          HAVE_CODE: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+          HAVE_SOURCE: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+        run: |
+          set -euo pipefail
+          [[ "$HAVE_CODE" = "true" && "$HAVE_SOURCE" = "true" ]] || { echo 'BLOCKED_PINNED_PRIVATE_SOURCE'; exit 2; }
+      - uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: 44ee4ed967afeeacb0c1e5d931e794606f0e2a0e
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqKLsabgH5C9okWi0dh2l9GKJl"
+      - uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
+          path: private_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqKLsabgH5C9okWi0dh2l9GKJl"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Independently pin BOTH exact immutable Git SHAs
+        run: |
+          set -euo pipefail
+          test "$(git -C private_code rev-parse HEAD)" = "$PRIVATE_CODE_SHA"
+          test "$(git -C private_source rev-parse HEAD)" = "$PRIVATE_SOURCE_SHA"
+      - name: Synthetic registered-session safety tests and original 11 auditor tests
+        working-directory: private_code
+        run: |
+          python -m unittest research.strategy_search.test_session_only_5319_audit research.strategy_search.test_retest_short_full13_audit -v
+      - name: ONE original full13 session economic replay, no trades and no holdout
+        working-directory: private_code
+        run: |
+          python -m research.strategy_search.session_only_5319_audit \
+            --private-data-checkout ../private_source \
+            --output ../session_private.json \
+            --public-output ../session_public.json
+      - name: Recompute exact receipt plus public aggregate safety and count
+        run: |
+          python - <<'PY'
+          import hashlib,json,pathlib
+          full=pathlib.Path('session_private.json').read_bytes()
+          p=json.loads(full);digest=p.pop('receipt_sha256')
+          calc=hashlib.sha256(json.dumps(p,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+          public=json.loads(pathlib.Path('session_public.json').read_text())
+          if (calc!=digest or p.get('schema')!='AVRORA_SESSION_ONLY_5319_FIXED_WINDOWS_RESULTS_V1'
+            or p.get('source_rows')!=64224 or p.get('predeclared_scenarios')!=52
+            or len(p.get('session_only',{}))!=52
+            or p.get('source_sha256')!='7e1bed08982de6e5ff1ec60cbd8afef68067298adcffd590149b43a099dbb297'
+            or p.get('real')!='OFF' or p.get('holdout')!='SEALED'
+            or p.get('firstseen_uptime_not_proven') is not True
+            or public.get('schema')!='AVRORA_SESSION_ONLY_PUBLIC_NON_PRIVATE_AGGREGATES_V1'
+            or public.get('private_result_sha256')!=hashlib.sha256(full).hexdigest()
+            or public.get('scenario_count')!=52):
+              raise SystemExit('BLOCKED_SESSION_SOURCE_OR_RECEIPT')
+          print('PASS_PINNED_SESSION_ONLY',json.dumps(public,sort_keys=True))
+          PY
+      - name: Encrypt detailed private scenario-by-week and symbol reports
+        env:
+          AVRORA_AUDIT_PUBKEY: |
+            -----BEGIN PUBLIC KEY-----
+            MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAqcSNFOg9fNy1b92Cf51m
+            3Kkufm4ebzUfYc5Wh9tpYWdFpMFpH/VZaFXGioRS8gDALXvwRUcfT2AgRdvs/fca
+            KnROjdJ+PjdHFp1NCTGK8JSOez9hpRY3GJB2u3c8YKC90DKFwNU3jLtgq9MN35dh
+            rtleVTpZ0q26BLqpqy//p/IWRjmeOvTavKvxQL1ZiJwo7xgPx271lAamiwXtkTaN
+            ocIfqKJUL1RDAHMMjdWCkgNXmxLbRm2gHn11L2lzWDe2L/EovixsGSvdnyd1qWz7
+            LhcHuQhth7xGiiROp4212PxRIHJaGTLGEjoZXsKNj2myrJmlsY97U/6HJFAolpCL
+            5uOejiNNU5z+xjVKrHUBfAqBW2XQgySc1fpTDmSfquc9utd33ZCB2kl2xeBRrRpg
+            29XISHAm+5qDFE37jyHld2S0D42IqAbPHdH7YjnYrsetnlfeYbk1eD+rND9UGZlv
+            f7e0tpgaYPn9hUVd2V76ST7yLnkBWedH5oc6FIT1U56VAgMBAAE=
+            -----END PUBLIC KEY-----
+        run: |
+          python -m pip install --disable-pip-version-check -q 'cryptography>=42,<47'
+          python - <<'PY'
+          import base64,hashlib,json,os,pathlib
+          from cryptography.fernet import Fernet
+          from cryptography.hazmat.primitives import hashes,serialization
+          from cryptography.hazmat.primitives.asymmetric import padding
+          data=pathlib.Path('session_private.json').read_bytes()
+          symmetric=Fernet.generate_key()
+          pub=serialization.load_pem_public_key(os.environ['AVRORA_AUDIT_PUBKEY'].encode())
+          payload={'schema':'AVRORA_SESSION_ONLY_ENCRYPTED_PRIVATE_REPORT_V1',
+                'encrypted_key_b64':base64.b64encode(pub.encrypt(symmetric,
+                  padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),
+                  algorithm=hashes.SHA256(),label=None))).decode('ascii'),
+                'ciphertext_b64':Fernet(symmetric).encrypt(data).decode('ascii'),
+                'plaintext_sha256':hashlib.sha256(data).hexdigest()}
+          pathlib.Path('session_encrypted.json').write_text(json.dumps(payload,sort_keys=True)+'\n')
+          print('PASS_PRIVATE_SESSION_REPORT_ENCRYPTED')
+          PY
+      - name: Publish safe aggregate grid (not full strategy timing breakdown)
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-session-only-safe-aggregate-${{ github.run_id }}
+          path: session_public.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Store ONLY ciphertext for private detailed research
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-session-only-encrypted-detail-${{ github.run_id }}
+          path: session_encrypted.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Securely clean ephemeral confidential source and result
+        if: ${{ always() }}
+        run: |
+          rm -rf private_code private_source
+          rm -f session_private.json session_encrypted.json
