@@ -56,6 +56,22 @@ jobs:
             exit 2
           fi
           echo PSYAI_PATCH_SYNTAX_PASS
+          python -m py_compile tools/bench_llama.py >/dev/null 2>&1
+          if [ "$?" -ne 0 ]; then
+            echo PSYAI_SPEC_BENCH_SYNTAX_FAIL
+            exit 2
+          fi
+          python tools/bench_llama.py --help > ../spec_cli_help_private.log 2>&1
+          if [ "$?" -ne 0 ]; then
+            echo PSYAI_SPEC_BENCH_CLI_FAIL
+            exit 2
+          fi
+          python - <<'PY'
+          s=open('../spec_cli_help_private.log',encoding='utf8').read()
+          required=('--spec-type','draft-mtp','ngram-mod','--vram-budget-mib','--draft-model')
+          assert all(t in s for t in required), 'spec candidate CLI flags absent'
+          print('PSYAI_SPEC_BENCH_CLI_PASS')
+          PY
           python -m pip install -q -r requirements.txt -r requirements-dev.txt > ../private_test_output.log 2>&1
           deps=$?
           if [ "$deps" -ne 0 ]; then
@@ -95,4 +111,4 @@ jobs:
         shell: bash
         run: |
           rm -rf private_psyai
-          rm -f private_test_output.log synthetic-junit.xml
+          rm -f private_test_output.log synthetic-junit.xml spec_cli_help_private.log
