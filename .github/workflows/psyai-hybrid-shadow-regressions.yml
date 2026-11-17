@@ -64,7 +64,16 @@ jobs:
           p=pathlib.Path('knowledge/speech_patterns_197.csv')
           print('CATALOG_FILE_PRESENT',p.is_file())
           if p.is_file():
-              print('CATALOG_SHA_MATCH',hashlib.sha256(p.read_bytes()).hexdigest()==c.CATALOG_SHA)
+              actual=hashlib.sha256(p.read_bytes()).hexdigest()
+              print('CATALOG_ACTUAL_SHA256',actual)
+              print('CATALOG_SHA_MATCH',actual==c.CATALOG_SHA)
+              try:
+                  snap=c.load_shadow_catalog(p,expected_sha256=actual,
+                      environ={'RESEARCH_MARKERS_SHADOW':'1'})
+                  print('CATALOG_SCHEMA_VALID',snap is not None,
+                      len(snap.records) if snap else 0)
+              except Exception as exc:
+                  print('CATALOG_SCHEMA_ERROR',type(exc).__name__,str(exc)[:80])
           PY
       - name: Gate 3 analysis route and no-model PDF/DOCX
         run: |
