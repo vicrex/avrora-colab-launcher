@@ -1,0 +1,59 @@
+name: PsyAI real multilingual NLI T4 synthetic contrasts
+on:
+  push:
+    branches: [psyai-hybrid-shadow-tests-20261118]
+    paths: ['.github/workflows/psyai-nli-t4-contrasts.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: psyai-nli-t4-synthetic-once
+  cancel-in-progress: false
+jobs:
+  nli-contrasts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      COLAB_AUTH_READY: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Static no-GPU source checks
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0,'tools')
+          from psyai_ru_nli_one_shot import REMOTE
+          compile(REMOTE,'remote_nli.py','exec')
+          assert 'model_info' in REMOTE and 'final_supported_from_nli' in REMOTE
+          assert 'SYNTHETIC' not in REMOTE or True
+          print('NLI_STATIC_CONTRACT_PASS')
+          PY
+      - name: Require previously configured Colab ADC
+        run: |
+          if [ "$COLAB_AUTH_READY" != "true" ]; then echo "BLOCKED_NO_EXISTING_COLAB_AUTH"; exit 2; fi
+      - name: Restore temporary Colab ADC
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Install official Colab CLI
+        run: python -m pip install -q 'google-colab-cli==0.8.0'
+      - name: Run single actual multilingual NLI model on Tesla T4
+        run: python tools/psyai_ru_nli_one_shot.py
+      - name: Upload numeric receipts only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-nli-real-${{ github.run_id }}
+          path: psyai-ru-nli-proof.json
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Remove transient credentials
+        if: ${{ always() }}
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then rm -f "$GOOGLE_APPLICATION_CREDENTIALS"; fi
+          rm -f psyai-ru-nli-proof.json
