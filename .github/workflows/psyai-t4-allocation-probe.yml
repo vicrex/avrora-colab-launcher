@@ -1,0 +1,44 @@
+name: PsyAI one-shot T4 allocation probe (no model)
+on:
+  push:
+    branches: [psyai-gpu-safe-20261117]
+    paths: ['.github/workflows/psyai-t4-allocation-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: psyai-gpu-safe-colab-single
+  cancel-in-progress: false
+jobs:
+  gpu-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      ADC_AVAILABLE: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 'Verify saved Colab authorization exists'
+        run: |
+          if [ "$ADC_AVAILABLE" != "true" ]; then
+            echo PSYAI_COLAB_STATUS=BLOCKED_MISSING_EXISTING_ADC
+            exit 2
+          fi
+      - name: 'Restore existing ADC without printing credentials'
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: 'Install official Colab CLI'
+        run: python -m pip install -q 'google-colab-cli==0.7.4'
+      - name: 'Request exactly one T4 session without Gemma'
+        run: python tools/psyai_t4_probe_one_shot.py
+      - name: 'Remove temporary ADC'
+        if: ${{ always() }}
+        run: |
+          if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
