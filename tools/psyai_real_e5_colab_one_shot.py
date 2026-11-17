@@ -138,8 +138,8 @@ def main():
             with tempfile.TemporaryDirectory(prefix="psyai-real-e5-") as d:
                 p=Path(d)/"e5_colab.py"
                 p.write_text(REMOTE,encoding="utf8")
-                run=subprocess.run(["colab","--auth=adc","run","--gpu","T4",str(p)],
-                    stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=880,check=False)
+                run=subprocess.run(["colab","--auth=adc","run","--gpu","T4","--timeout","600",str(p)],
+                    stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=930,check=False)
                 raw=run.stdout.decode("utf8","replace")
                 found=[x.split("PSYAI_E5_RESULT=",1)[1].strip() for x in raw.splitlines() if "PSYAI_E5_RESULT=" in x]
                 if run.returncode or len(found)!=1:raise ValueError("NO_REMOTE_RECEIPT")
