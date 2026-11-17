@@ -1,0 +1,111 @@
+name: PsyAI one-shot private GPU Colab SAFE (T4, synthetic)
+
+on:
+  push:
+    branches: [psyai-gpu-safe-20261117]
+    paths: ['.github/workflows/psyai-gpu-safe-one-shot.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-gpu-safe-colab-single
+  cancel-in-progress: false
+
+jobs:
+  private-source-gpu-one-shot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 115
+    env:
+      SOURCE_KEY_READY: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
+      COLAB_ADC_READY: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+    steps:
+      - name: Checkout public launcher without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate bridge without launching Colab
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tools/psyai_private_colab_runner.py tools/psyai_gpu_safe_bridge.py tools/write_adc.py
+          python - <<'PY'
+          import sys
+          sys.path.insert(0,'tools')
+          from psyai_gpu_safe_bridge import remote,blocked,SCHEMA
+          payload=remote('a'*40,b'fake synthetic blob')
+          compile(payload,'remote_generated_script','exec')
+          assert blocked('TEST')['status']=='BLOCKED'
+          assert SCHEMA=='PSYAI_GPU_SAFE_V1'
+          print('PRIVATE_GPU_TRANSPORT_STATIC_PASS')
+          PY
+      - name: Fail closed if existing Google authorization or private source key missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$SOURCE_KEY_READY" != "true" ]; then
+            echo BLOCKED_PRIVATE_SOURCE_DEPLOY_KEY_NOT_CONFIGURED
+            exit 2
+          fi
+          if [ "$COLAB_ADC_READY" != "true" ]; then
+            echo BLOCKED_EXISTING_COLAB_ADC_NOT_CONFIGURED
+            exit 2
+          fi
+      - name: Read-only private PsyAI source at exact CASE34 Git commit
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: f121755a3038b5856396066d6fee4f38b7ceae
+          path: private_psyai
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+      - name: Recover existing Google ADC temporarily
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Install existing official Colab CLI
+        run: python -m pip install --disable-pip-version-check -q 'google-colab-cli==0.7.4'
+      - name: Run exactly one Colab T4 GPU session and return sanitized receipt
+        shell: bash
+        run: |
+          set +e
+          python tools/psyai_gpu_safe_bridge.py > psyai-gpu-bridge-private.log 2>&1
+          exitcode=$?
+          if [ -f psyai-gpu-safe-proof.json ]; then
+            python - <<'PY'
+          import json
+          r=json.load(open('psyai-gpu-safe-proof.json',encoding='utf8'))
+          print('PSYAI_GPU_SAFE',r.get('status'),'SOURCE_SHA',r.get('source_sha'),
+                'GPU',r.get('gpu'),'VRAM_BUDGET_MIB',r.get('vram_budget_mib'),
+                'MODEL_GENERATION',r.get('model_generation'),
+                'TARGETED_TESTS',r.get('targeted_tests'),'REASON',r.get('reason',''))
+          PY
+          else
+            echo BLOCKED_NO_SAFE_PROOF
+          fi
+          exit "$exitcode"
+      - name: Upload sanitized proof only, never private output or source
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-gpu-safe-proof-${{ github.run_id }}
+          path: psyai-gpu-safe-proof.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Delete temporary credentials and all private files
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
+          rm -f psyai-gpu-bridge-private.log psyai-gpu-safe-proof.json
+          rm -rf private_psyai
