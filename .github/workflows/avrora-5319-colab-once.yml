@@ -1,0 +1,105 @@
+name: AVRORA 5319 actual Colab FULL13 one-shot (research only)
+
+on:
+  push:
+    branches:
+      - audit/5319-colab-once-20261117
+    paths:
+      - .github/workflows/avrora-5319-colab-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: avrora-5319-colab-once-20261117
+  cancel-in-progress: false
+
+jobs:
+  retest-5319-single-colab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      CODE_SHA: "68de9a7672702799bc6201c9e4960f34be82e5d7"
+      DATA_SHA: "3352275492bf192dd4c6d7abfcf9bbaae19ac983"
+    steps:
+      - name: Checkout isolated research runner
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Preflight existing authorizations and Python syntax
+        shell: bash
+        env:
+          HAVE_CODE: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+          HAVE_DATA: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY != '' }}
+          HAVE_COLAB: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+        run: |
+          set -euo pipefail
+          test "$REAL" = OFF
+          test "$HOLDOUT" = SEALED
+          python -m py_compile tools/avrora_5319_colab_once.py
+          if [[ "$HAVE_CODE" != true || "$HAVE_DATA" != true || "$HAVE_COLAB" != true ]]; then
+            echo BLOCKED_EXISTING_READONLY_COLAB_AUTH
+            exit 2
+          fi
+      - name: Checkout immutable RETEST5319 research source
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: 68de9a7672702799bc6201c9e4960f34be82e5d7
+          path: private_code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Checkout immutable FULL13 discovery source
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/avrora-wave-source
+          ref: 3352275492bf192dd4c6d7abfcf9bbaae19ac983
+          path: private_source
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_WAVE_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+      - name: Verify exact pinned commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C private_code rev-parse HEAD)" = "$CODE_SHA"
+          test "$(git -C private_source rev-parse HEAD)" = "$DATA_SHA"
+          test -f private_source/research/P816_FULL13_PREWEEK220/data_manifest.json
+          test -f private_code/research/strategy_search/retest_short_full13_audit.py
+          echo PASS_PINNED_RETEST5319_SOURCE
+      - name: Existing authorized free CPU Colab environment
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -q google-colab-cli==0.7.4
+          python tools/write_adc.py
+      - name: Execute frozen 5319 FULL13 on Colab and verify independent CHECK2
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/avrora_5319_colab_once.py
+      - name: Preserve aggregate-only Colab receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: avrora-5319-colab-actual-full13-${{ github.run_id }}
+          path: AVRORA_5319_COLAB_ACTUAL_RECEIPT.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Erase credentials and private inputs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then rm -f "$GOOGLE_APPLICATION_CREDENTIALS"; fi
+          rm -rf "$GITHUB_WORKSPACE/private_code" "$GITHUB_WORKSPACE/private_source"
