@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: 2eefb334a9783c556d3cdb940be4b2c395984fba
+          ref: 7aa8d06a3c346837f1c6ba0fc2732438e7b2c7be
           path: private_psyai
           fetch-depth: 1
           persist-credentials: false
@@ -38,7 +38,7 @@ jobs:
       - name: Gate 0 exact source and syntax
         run: |
           cd private_psyai
-          test "$(git rev-parse HEAD)" = "2eefb334a9783c556d3cdb940be4b2c395984fba"
+          test "$(git rev-parse HEAD)" = "7aa8d06a3c346837f1c6ba0fc2732438e7b2c7be"
           python -m py_compile hybrid_semantics.py analysis_bundle.py analysis_bundle_quality.py tests/test_hybrid_semantics.py
           echo HYBRID_GATE_0_SYNTAX_PASS
       - name: Install exact existing PsyAI test dependencies
