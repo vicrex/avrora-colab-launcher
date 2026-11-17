@@ -62,8 +62,23 @@ jobs:
             echo PSYAI_PATCH_DEPS_BLOCKED
             exit 2
           fi
-          python -m pytest -q tests/test_case34_final_admission_regression.py > ../private_test_output.log 2>&1
+          python -m pytest -q tests/test_case34_final_admission_regression.py --junitxml=../synthetic-junit.xml > ../private_test_output.log 2>&1
           result=$?
+          if [ "$result" -ne 0 ]; then
+            python - <<'PY'
+          import re,xml.etree.ElementTree as ET
+          try:
+              root=ET.parse('../synthetic-junit.xml').getroot()
+              for t in root.iter('testcase'):
+                  if t.find('failure') is not None or t.find('error') is not None:
+                      name=t.attrib.get('name','')
+                      if re.fullmatch(r'test_[a-z0-9_]{1,100}',name):
+                          kind='ASSERTION' if t.find('failure') is not None else 'ERROR'
+                          print('PSYAI_SYNTHETIC_TEST_FAIL',name,kind)
+          except Exception:
+              print('PSYAI_TEST_DIAGNOSTICS_UNAVAILABLE')
+          PY
+          fi
           if [ "$result" -eq 0 ]; then
             echo PSYAI_EIGHT_REGRESSIONS_PASS
           else
@@ -75,4 +90,4 @@ jobs:
         shell: bash
         run: |
           rm -rf private_psyai
-          rm -f private_test_output.log
+          rm -f private_test_output.log synthetic-junit.xml
