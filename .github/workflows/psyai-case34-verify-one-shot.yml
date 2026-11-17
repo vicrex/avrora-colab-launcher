@@ -1,0 +1,70 @@
+name: PsyAI CASE34 source-bound admission gate (no Gemma)
+on:
+  push:
+    branches: [psyai-vector-colab-ablation-20261117]
+    paths: ['.github/workflows/psyai-case34-verify-one-shot.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: psyai-case34-source-bound-gate
+  cancel-in-progress: false
+jobs:
+  private-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      PRIVATE_KEY_READY: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require existing read-only private checkout key
+        run: |
+          if [ "$PRIVATE_KEY_READY" != "true" ]; then
+            echo "BLOCKED_NO_PRIVATE_KEY"
+            exit 2
+          fi
+      - name: Read-only exact PsyAI experimental branch
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: 80f16d41d04eb3a5fe7a1ec22b9400e124762bf1
+          path: private_psyai
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Stage 1 — syntax and immutable source gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd private_psyai
+          test "$(git rev-parse HEAD)" = "80f16d41d04eb3a5fe7a1ec22b9400e124762bf1"
+          python -m py_compile analysis_bundle.py analysis_bundle_quality.py tests/test_case34_direct_atomic_mode.py
+          echo "STAGE_1_SYNTAX_SOURCE_SHA=PASS"
+      - name: Install existing test dependencies (synthetic data only)
+        run: |
+          cd private_psyai
+          python -m pip install -q -r requirements.txt -r requirements-dev.txt
+      - name: Stage 2 — atomic V2 negative and positive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd private_psyai
+          PYTHONHASHSEED=17 python -m pytest -q tests/test_case34_direct_atomic_mode.py tests/test_analysis_bundle_premises.py
+          echo "STAGE_2_V2_NO_FALSE_SUPPORT_PASS"
+      - name: Stage 3 — cross-report/author attribution regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd private_psyai
+          PYTHONHASHSEED=29 python -m pytest -q tests/test_case34_final_admission_regression.py tests/test_case34_source_attribution_and_symptom.py tests/test_case34_call_count_optimization.py tests/test_atomic_v15_transport.py tests/test_v_shared_schema.py
+          echo "STAGE_3_CASE34_REGRESSION_PASS"
+      - name: Remove private source and temporary files
+        if: ${{ always() }}
+        run: rm -rf private_psyai
