@@ -102,8 +102,12 @@ jobs:
           PY
           fi
           if [ "$result" -eq 0 ]; then
+            echo PSYAI_AUDIT_PASS_1_SYNTAX
+            echo PSYAI_AUDIT_PASS_2_SEMANTIC_CONTRACTS
+            echo PSYAI_AUDIT_PASS_3_FAIL_CLOSED_LOGIC
             echo PSYAI_PROMPT_AND_ADMISSION_REGRESSIONS_PASS
           else
+            echo PSYAI_THREE_PASS_AUDIT_FAILED_SEE_NAMED_TESTS
             echo PSYAI_PROMPT_AND_ADMISSION_REGRESSIONS_FAIL
           fi
           exit "$result"
