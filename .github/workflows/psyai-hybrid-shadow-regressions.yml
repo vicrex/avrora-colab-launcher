@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: 06a2a564fd6ff79df2889f29d5af79c275b993fb
+          ref: fb8e51ef617f504748684d009b2d985e0eb62834
           path: private_psyai
           fetch-depth: 1
           persist-credentials: false
@@ -38,7 +38,7 @@ jobs:
       - name: Gate 0 exact source and syntax
         run: |
           cd private_psyai
-          test "$(git rev-parse HEAD)" = "06a2a564fd6ff79df2889f29d5af79c275b993fb"
+          test "$(git rev-parse HEAD)" = "fb8e51ef617f504748684d009b2d985e0eb62834"
           python -m py_compile hybrid_semantics.py analysis_bundle.py analysis_bundle_quality.py tests/test_hybrid_semantics.py
           echo HYBRID_GATE_0_SYNTAX_PASS
       - name: Install exact existing PsyAI test dependencies
@@ -48,7 +48,7 @@ jobs:
       - name: Gate 1 vector graph NLI safety
         run: |
           cd private_psyai
-          PYTHONHASHSEED=34 python -m pytest -q tests/test_hybrid_semantics.py
+          PYTHONHASHSEED=34 python -m pytest -q tests/test_hybrid_semantics.py tests/test_catalog_integrity_alignment.py
           echo HYBRID_GATE_1_PASS
       - name: Gate 2 existing independent V2 and CASE34 regressions
         run: |
