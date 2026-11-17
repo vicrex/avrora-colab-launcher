@@ -1,0 +1,70 @@
+name: PsyAI prompt change baseline-vs-patch comparison (CPU, synthetic)
+on:
+  push:
+    branches: [psyai-gpu-safe-20261117]
+    paths: ['.github/workflows/psyai-prompt-baseline-compare-one-shot.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: psyai-prompt-baseline-compare-one-shot
+  cancel-in-progress: false
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: f121755a3038b5856396066d6fee4f38b7ceaea4
+          path: baseline
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+      - uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: fix/psyai-case34-final-admission-20261117
+          path: patched
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies without running the model
+        run: python -m pip install -q -r patched/requirements.txt -r patched/requirements-dev.txt
+      - name: Compare previously failing integration tests without exposing private output
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os,subprocess,xml.etree.ElementTree as ET
+          tests = [
+          'test_decoder_contract_is_visible_in_actual_messages_and_counted_once',
+          'test_insight_reuse_generates_no_second_meaning_and_preserves_rejection',
+          'test_semantic_rubric_failure_withholds_score_without_mutating_input',
+          'test_compact_review_rejects_false_coverage_and_keeps_application_ids',
+          'test_explicit_risk_rejection_becomes_a_visible_claim_issue',
+          ]
+          for branch in ('baseline','patched'):
+              args=['python','-m','pytest','-q',*[f'tests/test_analysis_bundle_quality.py::{t}' for t in tests],
+                    '--junitxml=../'+branch+'-result.xml']
+              with open(branch+'-test-private.log','w') as log:
+                  x=subprocess.run(args,cwd=branch,stdout=log,stderr=subprocess.STDOUT,timeout=250,check=False)
+              root=ET.parse(branch+'-result.xml').getroot()
+              bad=[t.attrib.get('name','') for t in root.iter('testcase')
+                   if t.find('failure') is not None or t.find('error') is not None]
+              print('PSYAI_'+branch.upper()+'_TARGETED', 'PASS' if x.returncode==0 else 'FAIL',
+                    'num_failed='+str(len(bad)), 'names='+','.join(bad))
+          PY
+      - name: Delete all private code and test logs
+        if: ${{ always() }}
+        run: |
+          rm -rf baseline patched
+          rm -f baseline-result.xml patched-result.xml baseline-test-private.log patched-test-private.log
