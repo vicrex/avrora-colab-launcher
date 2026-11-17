@@ -142,7 +142,21 @@ def main():
                     stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=930,check=False)
                 raw=run.stdout.decode("utf8","replace")
                 found=[x.split("PSYAI_E5_RESULT=",1)[1].strip() for x in raw.splitlines() if "PSYAI_E5_RESULT=" in x]
-                if run.returncode or len(found)!=1:raise ValueError("NO_REMOTE_RECEIPT")
+                if run.returncode or len(found)!=1:
+                    receipt["reason"]="NO_REMOTE_RECEIPT"
+                    low=raw.lower()
+                    receipt["transport_diagnostic"]={
+                        "exit_code":run.returncode,
+                        "remote_session_ready":"session ready" in low,
+                        "remote_execution_started":"executing" in low,
+                        "kernel_timeout":"timeout waiting for output" in low,
+                        "backend_allocation_rejected":"allocation refused" in low or "backend rejected" in low,
+                        "remote_python_traceback":"traceback (most recent call last)" in low,
+                        "out_of_memory":"out of memory" in low or "cuda out of memory" in low,
+                        "module_missing":"modulenotfounderror" in low,
+                        "cli_argument_error":"no such option" in low or "unexpected extra argument" in low,
+                        "no_receipt":len(found)!=1}
+                    raise RuntimeError("SAFE_DIAGNOSTIC_RECORDED")
                 reply=json.loads(found[0]);claim=reply.pop("receipt_sha256",None)
                 actual=hashlib.sha256(json.dumps(reply,ensure_ascii=True,sort_keys=True,separators=(",",":")).encode("ascii")).hexdigest()
                 if reply.get("schema")!=SCHEMA or claim!=actual or reply.get("synthetic_only") is not True:
@@ -150,6 +164,7 @@ def main():
                 reply["receipt_sha256"]=claim
                 receipt=reply
         except subprocess.TimeoutExpired:receipt["reason"]="COLAB_TIMEOUT"
+        except RuntimeError:pass
         except (KeyError,ValueError,TypeError):receipt["reason"]="INVALID_OR_MISSING_REMOTE_RECEIPT"
     outfile.write_text(json.dumps(receipt,indent=2,ensure_ascii=True)+"\n")
     print("PSYAI_REAL_E5_COLAB_STATUS="+receipt["status"])
