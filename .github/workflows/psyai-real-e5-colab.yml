@@ -57,6 +57,7 @@ jobs:
           assert 'timeout' in inspect.signature(runmod.run_command).parameters
           txt=Path('tools/psyai_real_e5_colab_one_shot.py').read_text()
           assert '"--timeout","600"' in txt
+          assert 'transport_diagnostic' in txt
           print('COLAB_IDLE_TIMEOUT_GUARD_PASS')
           PY
       - name: Run single real E5 embedding pass on T4
