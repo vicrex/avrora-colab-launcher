@@ -29,6 +29,7 @@ def main():
         if not out["google_drive_access"]:out["reason"]="FILE_BYTES_MISMATCH"
     except Exception as exc:
         out["reason"]=type(exc).__name__
+        out["http_code"]=int(getattr(exc,"code",0)) if getattr(exc,"code",None) else None
     Path("psyai-case34-drive-access.json").write_text(
         json.dumps(out,sort_keys=True,indent=2)+"\n",encoding="utf-8")
     print("PSYAI_CASE34_DRIVE_ACCESS="+out["status"])
