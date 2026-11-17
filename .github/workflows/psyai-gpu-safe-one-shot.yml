@@ -60,7 +60,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: f121755a3038b5856396066d6fee4f38b7ceae
+          ref: f121755a3038b5856396066d6fee4f38b7ceaea4
           path: private_psyai
           fetch-depth: 1
           persist-credentials: false
