@@ -1,0 +1,85 @@
+name: PsyAI real Gemma 12B E-S-V2 PDF Word Colab one-shot
+on:
+  push:
+    branches: [psyai-gemma-fullpath-once-20261117]
+    paths: ['.github/workflows/psyai-gemma34-full-colab.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: psyai-gemma34-fullpath-exact-one
+  cancel-in-progress: false
+jobs:
+  gemma-34-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      SOURCE_KEY_READY: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
+      COLAB_ADC_READY: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+    steps:
+      - name: Checkout launcher only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Static syntax checks (no GPU)
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0,'tools')
+          from psyai_gemma34_full_colab import REMOTE,SCHEMA
+          compile(REMOTE,'psyai_gemma34_remote.py','exec')
+          assert SCHEMA=='PSYAI_GEMMA34_FULL_SYNTH_V1'
+          assert 'analysis_seconds' in REMOTE and 'PDF_AND_WORD_EXPORT' in REMOTE
+          assert 'model_sha_verified' in REMOTE and 'stop_guard' in REMOTE
+          print('PSYAI_GEMMA34_STATIC_PASS')
+          PY
+      - name: Enforce preexisting permissions
+        run: |
+          if [ "$SOURCE_KEY_READY" != "true" ] || [ "$COLAB_ADC_READY" != "true" ]; then
+            echo PSYAI_GEMMA34_BLOCKED_MISSING_EXISTING_AUTH
+            exit 2
+          fi
+      - name: Read-only private PsyAI code at pinned exact commit
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: 80f16d41d04eb3a5fe7a1ec22b9400e124762bf1
+          path: private_psyai
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+      - name: Restore only previously connected Colab authorization
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Install official CLI with explicit long execution timeout
+        run: |
+          python -m pip install -q 'google-colab-cli==0.8.0'
+          python - <<'PY'
+          import inspect
+          from colab_cli.commands.run import run_command
+          assert 'timeout' in inspect.signature(run_command).parameters
+          print('COLAB_CLI_TIMEOUT_VERIFIED')
+          PY
+      - name: Run one real Gemma 12B PsyAI analysis on synthetic 34-turn dialogue
+        run: python tools/psyai_gemma34_full_colab.py
+      - name: Upload allowlisted aggregate result only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-gemma34-fullpath-${{ github.run_id }}
+          path: psyai-gemma34-fullpath-proof.json
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Remove temporary credentials and private source
+        if: ${{ always() }}
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then rm -f "$GOOGLE_APPLICATION_CREDENTIALS"; fi
+          rm -rf private_psyai
+          rm -f psyai-gemma34-fullpath-proof.json
