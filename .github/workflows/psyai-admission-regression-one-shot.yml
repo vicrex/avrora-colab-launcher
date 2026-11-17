@@ -1,0 +1,78 @@
+name: PsyAI private admission regressions (NO GPU, NO MODEL)
+on:
+  push:
+    branches: [psyai-gpu-safe-20261117]
+    paths: ['.github/workflows/psyai-admission-regression-one-shot.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-source-regressions-single
+  cancel-in-progress: false
+
+jobs:
+  isolated-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SOURCE_KEY_READY: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
+    steps:
+      - name: Checkout public transport only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Confirm already existing private source credential
+        shell: bash
+        run: |
+          if [ "$SOURCE_KEY_READY" != "true" ]; then
+            echo BLOCKED_PRIVATE_SOURCE_KEY_UNAVAILABLE
+            exit 2
+          fi
+      - name: Fetch PsyAI patch branch read only
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: fix/psyai-case34-final-admission-20261117
+          path: private_psyai
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Run syntax check and 8 synthetic fail-closed regressions
+        shell: bash
+        run: |
+          set +e
+          cd private_psyai
+          python -m py_compile analysis_bundle.py analysis_bundle_quality.py cognitive_evidence.py cognitive_evidence_report.py deep_analysis_report.py analysis_bundle_views.py tests/test_case34_final_admission_regression.py > ../private_test_output.log 2>&1
+          syntax=$?
+          if [ "$syntax" -ne 0 ]; then
+            echo PSYAI_PATCH_SYNTAX_FAIL
+            exit 2
+          fi
+          echo PSYAI_PATCH_SYNTAX_PASS
+          python -m pip install -q -r requirements.txt -r requirements-dev.txt > ../private_test_output.log 2>&1
+          deps=$?
+          if [ "$deps" -ne 0 ]; then
+            echo PSYAI_PATCH_DEPS_BLOCKED
+            exit 2
+          fi
+          python -m pytest -q tests/test_case34_final_admission_regression.py > ../private_test_output.log 2>&1
+          result=$?
+          if [ "$result" -eq 0 ]; then
+            echo PSYAI_EIGHT_REGRESSIONS_PASS
+          else
+            echo PSYAI_EIGHT_REGRESSIONS_FAIL
+          fi
+          exit "$result"
+      - name: Remove temporary private source and logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf private_psyai
+          rm -f private_test_output.log
