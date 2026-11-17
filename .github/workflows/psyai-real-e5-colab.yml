@@ -48,9 +48,13 @@ jobs:
         run: python -m pip install -q 'google-colab-cli==0.8.0'
       - name: Confirm supported CLI timeout flag
         run: |
-          colab run --help | grep -F -- '--timeout'
           python - <<'PY'
+          import inspect
+          from importlib.metadata import version
           from pathlib import Path
+          import colab_cli.commands.run as runmod
+          assert version('google-colab-cli')=='0.8.0'
+          assert 'timeout' in inspect.signature(runmod.run_command).parameters
           txt=Path('tools/psyai_real_e5_colab_one_shot.py').read_text()
           assert '"--timeout","600"' in txt
           print('COLAB_IDLE_TIMEOUT_GUARD_PASS')
