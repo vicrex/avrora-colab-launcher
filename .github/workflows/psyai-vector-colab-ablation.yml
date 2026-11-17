@@ -1,0 +1,54 @@
+name: PsyAI vector-only Colab T4 ablation (synthetic, one-shot)
+on:
+  push:
+    branches: [psyai-vector-colab-ablation-20261117]
+    paths: ['.github/workflows/psyai-vector-colab-ablation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: psyai-vector-ablation-one-shot
+  cancel-in-progress: false
+jobs:
+  synthetic-vector-ablation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      ADC_AVAILABLE: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile synthetic benchmark; do not fetch private PsyAI
+        run: python -m py_compile tools/psyai_vector_colab_one_shot.py
+      - name: Require previously authorized Colab account
+        run: |
+          if [ "$ADC_AVAILABLE" != "true" ]; then
+            echo PSYAI_VECTOR_STATUS=BLOCKED_EXISTING_ADC_ABSENT
+            exit 2
+          fi
+      - name: Temporarily restore existing Colab ADC
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Install official Colab CLI
+        run: python -m pip install -q 'google-colab-cli==0.7.4'
+      - name: Run exactly one synthetic T4 search benchmark
+        run: python tools/psyai_vector_colab_one_shot.py
+      - name: Publish only aggregate numeric evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-vector-ablation-${{ github.run_id }}
+          path: psyai-vector-colab-proof.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Remove temporary Google credentials
+        if: ${{ always() }}
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
