@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 from psyai_private_colab_runner import source_archive, sha, canon
 
@@ -61,6 +62,8 @@ def model_canary(data):
 try:
   total,free=mem()
   p["gpu"]="T4_REQUESTED"
+  gpuprobe=cmd(["nvidia-smi","--query-gpu=name","--format=csv,noheader"],timeout=15,capture=True)
+  p["gpu_actual_name"]=gpuprobe.stdout.decode("utf-8","replace").splitlines()[0].strip() if gpuprobe.returncode==0 and gpuprobe.stdout else "UNKNOWN"
   p["gpu_total_mib"]=total
   p["gpu_free_mib_start"]=free
   p["vram_budget_mib"]=max(0,min(8192,int(total*0.50),free-2048))
@@ -137,6 +140,7 @@ try:
     p["batch_tokens"]=128
     p["microbatch_tokens"]=128
     p["vram_limit_type"]="SOFTWARE_WATCHDOG_NOT_HARD_HARDWARE_QUOTA"
+    p["model_runtime_mode"]="SMOKE_ONLY_NOT_CASE34"
     argv=[str(binary),"-m",str(model),"-ngl",str(ngl),"-c","1024","-b","128","-ub","128","-t","4",
       "-n","48","--no-display-prompt","-p",
       "Как называется башня с огнём, помогающая кораблям найти берег? Ответь одним русским словом."]
@@ -180,10 +184,21 @@ def main():
             output=Path(d)/"remote.log"
             script.write_text(remote(rev,packed),encoding="utf-8")
             script.chmod(0o600)
+            print("PSYAI_GPU_BRIDGE_STAGE=COLAB_CLI_START",flush=True)
             with output.open("wb") as log:
-                result=subprocess.run(["colab","--auth=adc","run","--gpu","T4",str(script)],
-                    stdout=log,stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL,
-                    timeout=5800,check=False)
+                process=subprocess.Popen(["colab","--auth=adc","run","--gpu","T4",str(script)],
+                    stdout=log,stderr=subprocess.STDOUT,stdin=subprocess.DEVNULL)
+                started=time.monotonic()
+                while process.poll() is None:
+                    elapsed=int(time.monotonic()-started)
+                    if elapsed>=5800:
+                        process.terminate()
+                        try:process.wait(timeout=20)
+                        except subprocess.TimeoutExpired:process.kill();process.wait()
+                        raise ValueError("COLAB_TRANSPORT_TIMEOUT")
+                    print("PSYAI_GPU_BRIDGE_HEARTBEAT elapsed_seconds="+str(elapsed)+" remote_status=RUNNING_UNVERIFIED",flush=True)
+                    time.sleep(60)
+                print("PSYAI_GPU_BRIDGE_STAGE=COLAB_CLI_FINISHED exit_code="+str(process.returncode),flush=True)
             matches=[line.split(MARKER,1)[1] for line in
                      output.read_text(encoding="utf-8",errors="replace").splitlines()
                      if MARKER in line]
@@ -200,14 +215,14 @@ def main():
               "targeted_tests","clinical_quality","windows_e2e","gpu",
               "gpu_total_mib","gpu_free_mib_start","vram_budget_mib","peak_extra_vram_mib",
               "vram_limit_tripped","gpu_layers_attempted","context_tokens","batch_tokens","microbatch_tokens",
-              "vram_limit_type","llama_sha","steps","reason",
+              "vram_limit_type","model_runtime_mode","gpu_actual_name","llama_sha","steps","reason",
               "inference_timeout"}
             proof={k:v for k,v in received.items() if k in accepted}
             proof["receipt_sha256"]=sha(canon(proof).encode("ascii"))
     except (ValueError,OSError,subprocess.TimeoutExpired,subprocess.CalledProcessError) as e:
         allow={"EXISTING_COLAB_ADC_MISSING","PRIVATE_SOURCE_CHECKOUT_MISSING",
           "REMOTE_RECEIPT_MISSING","REMOTE_RECEIPT_HASH_MISMATCH",
-          "REMOTE_RECEIPT_SOURCE_MISMATCH"}
+          "REMOTE_RECEIPT_SOURCE_MISMATCH","COLAB_TRANSPORT_TIMEOUT"}
         proof=blocked(str(e) if str(e) in allow else type(e).__name__)
     OUTPUT.write_text(json.dumps(proof,ensure_ascii=True,indent=2)+"\n",encoding="utf-8")
     print("PSYAI_GPU_SAFE_STATUS",proof["status"],proof.get("reason",""))
