@@ -63,7 +63,7 @@ try:
   p["gpu"]="T4_REQUESTED"
   p["gpu_total_mib"]=total
   p["gpu_free_mib_start"]=free
-  p["vram_budget_mib"]=max(0,min(int(total*0.75),free-2048))
+  p["vram_budget_mib"]=max(0,min(8192,int(total*0.50),free-2048))
   if p["vram_budget_mib"]<4000:raise ValueError("VRAM_HEADROOM_INSUFFICIENT")
   stage("gpu_preflight",True)
   with tempfile.TemporaryDirectory(prefix="psyai-gpu-safe-") as d:
@@ -118,9 +118,10 @@ try:
     stage("llama_cuda_build",True)
     binary=next((x for x in (llama/"build").rglob("llama-cli") if x.is_file() and os.access(x,os.X_OK)),None)
     if binary is None:raise ValueError("LLAMA_BINARY_MISSING")
-    # Model may partially offload to CPU. Monitor total VRAM and terminate only
-    # our own child if it exceeds the conservative budget.
-    ngl=24
+    # Model may partially offload to CPU. 8192 MiB is a software ceiling, NOT a
+    # hardware-enforced allocation quota; watch our own incremental VRAM usage.
+    # Start conservatively: avoid loading too many layers before the monitor reacts.
+    ngl=16
     def watch(process,peak):
       while process.poll() is None:
         try:
@@ -132,7 +133,11 @@ try:
         except Exception:pass
         time.sleep(0.25)
     p["gpu_layers_attempted"]=ngl
-    argv=[str(binary),"-m",str(model),"-ngl",str(ngl),"-c","2048","-t","4",
+    p["context_tokens"]=1024
+    p["batch_tokens"]=128
+    p["microbatch_tokens"]=128
+    p["vram_limit_type"]="SOFTWARE_WATCHDOG_NOT_HARD_HARDWARE_QUOTA"
+    argv=[str(binary),"-m",str(model),"-ngl",str(ngl),"-c","1024","-b","128","-ub","128","-t","4",
       "-n","48","--no-display-prompt","-p",
       "Как называется башня с огнём, помогающая кораблям найти берег? Ответь одним русским словом."]
     process=subprocess.Popen(argv,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
@@ -194,7 +199,8 @@ def main():
               "model_sha256_expected","model_sha256_verified","model_generation",
               "targeted_tests","clinical_quality","windows_e2e","gpu",
               "gpu_total_mib","gpu_free_mib_start","vram_budget_mib","peak_extra_vram_mib",
-              "vram_limit_tripped","gpu_layers_attempted","llama_sha","steps","reason",
+              "vram_limit_tripped","gpu_layers_attempted","context_tokens","batch_tokens","microbatch_tokens",
+              "vram_limit_type","llama_sha","steps","reason",
               "inference_timeout"}
             proof={k:v for k,v in received.items() if k in accepted}
             proof["receipt_sha256"]=sha(canon(proof).encode("ascii"))
