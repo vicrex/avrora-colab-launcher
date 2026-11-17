@@ -49,7 +49,7 @@ jobs:
         run: |
           set +e
           cd private_psyai
-          python -m py_compile analysis_bundle.py analysis_bundle_quality.py cognitive_evidence.py cognitive_evidence_report.py deep_analysis_report.py analysis_bundle_views.py tests/test_case34_final_admission_regression.py tests/test_case34_prompt_contracts.py > ../private_test_output.log 2>&1
+          python -m py_compile analysis_bundle.py analysis_bundle_quality.py cognitive_evidence.py cognitive_evidence_report.py deep_analysis_report.py analysis_timing_report.py analysis_bundle_views.py tests/test_case34_final_admission_regression.py tests/test_analysis_timing_report.py tests/test_case34_prompt_contracts.py > ../private_test_output.log 2>&1
           syntax=$?
           if [ "$syntax" -ne 0 ]; then
             echo PSYAI_PATCH_SYNTAX_FAIL
@@ -79,7 +79,7 @@ jobs:
             exit 2
           fi
           echo PSYAI_KNOWN_PREEXISTING_QUALITY_TEST_FAILS_DESELECTED=5
-          python -m pytest -q tests/test_case34_final_admission_regression.py tests/test_case34_prompt_contracts.py tests/test_v_shared_schema.py tests/test_atomic_v15_transport.py tests/test_analysis_bundle_premises.py tests/test_analysis_bundle_quality.py --deselect=tests/test_analysis_bundle_quality.py::test_decoder_contract_is_visible_in_actual_messages_and_counted_once --deselect=tests/test_analysis_bundle_quality.py::test_insight_reuse_generates_no_second_meaning_and_preserves_rejection --deselect=tests/test_analysis_bundle_quality.py::test_semantic_rubric_failure_withholds_score_without_mutating_input --deselect=tests/test_analysis_bundle_quality.py::test_compact_review_rejects_false_coverage_and_keeps_application_ids --deselect=tests/test_analysis_bundle_quality.py::test_explicit_risk_rejection_becomes_a_visible_claim_issue --junitxml=../synthetic-junit.xml > ../private_test_output.log 2>&1
+          python -m pytest -q tests/test_analysis_timing_report.py tests/test_case34_final_admission_regression.py tests/test_case34_prompt_contracts.py tests/test_v_shared_schema.py tests/test_atomic_v15_transport.py tests/test_analysis_bundle_premises.py tests/test_analysis_bundle_quality.py --deselect=tests/test_analysis_bundle_quality.py::test_decoder_contract_is_visible_in_actual_messages_and_counted_once --deselect=tests/test_analysis_bundle_quality.py::test_insight_reuse_generates_no_second_meaning_and_preserves_rejection --deselect=tests/test_analysis_bundle_quality.py::test_semantic_rubric_failure_withholds_score_without_mutating_input --deselect=tests/test_analysis_bundle_quality.py::test_compact_review_rejects_false_coverage_and_keeps_application_ids --deselect=tests/test_analysis_bundle_quality.py::test_explicit_risk_rejection_becomes_a_visible_claim_issue --junitxml=../synthetic-junit.xml > ../private_test_output.log 2>&1
           result=$?
           if [ "$result" -ne 0 ]; then
             python - <<'PY'
