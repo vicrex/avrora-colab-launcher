@@ -1,0 +1,64 @@
+name: PsyAI real E5 T4 embedding one-shot (synthetic)
+on:
+  push:
+    branches: [psyai-vector-colab-ablation-20261117]
+    paths: ['.github/workflows/psyai-real-e5-colab.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: psyai-real-e5-t4-one-shot
+  cancel-in-progress: false
+jobs:
+  real-e5-synthetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 19
+    env:
+      ADC_READY: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify benchmark syntax and remote payload syntax
+        run: |
+          python -m py_compile tools/psyai_real_e5_colab_one_shot.py
+          python - <<'PY'
+          import sys
+          sys.path.insert(0,'tools')
+          from psyai_real_e5_colab_one_shot import REMOTE
+          compile(REMOTE,'remote_real_e5_colab.py','exec')
+          assert 'intfloat/multilingual-e5-small' in REMOTE
+          assert 'gemma_generation' in REMOTE
+          print('STATIC_PAYLOAD_PASS')
+          PY
+      - name: Require existing Colab authorization
+        run: |
+          if [ "$ADC_READY" != "true" ]; then
+            echo BLOCKED_EXISTING_COLAB_ADC_NOT_CONFIGURED
+            exit 2
+          fi
+      - name: Restore existing Google ADC temporarily
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Install official Colab CLI
+        run: python -m pip install -q 'google-colab-cli==0.7.4'
+      - name: Run single real E5 embedding pass on T4
+        run: python tools/psyai_real_e5_colab_one_shot.py
+      - name: Upload aggregate receipt only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-real-e5-${{ github.run_id }}
+          path: psyai-real-e5-colab-proof.json
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Delete temporary Google credentials
+        if: ${{ always() }}
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
