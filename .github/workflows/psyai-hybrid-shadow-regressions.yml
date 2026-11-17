@@ -1,0 +1,65 @@
+name: PsyAI hybrid E5 graph NLI shadow regressions
+on:
+  push:
+    branches: [psyai-hybrid-shadow-tests-20261118]
+    paths: ['.github/workflows/psyai-hybrid-shadow-regressions.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: psyai-hybrid-shadow-offline
+  cancel-in-progress: false
+jobs:
+  verify-hybrid:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SOURCE_KEY_READY: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require already configured private read key
+        run: |
+          if [ "$SOURCE_KEY_READY" != "true" ]; then echo BLOCKED_NO_PRIVATE_SOURCE_KEY; exit 2; fi
+      - uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: 0b59a8de4615599e17b209b3034d8436a52304f1
+          path: private_psyai
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Gate 0 exact source and syntax
+        run: |
+          cd private_psyai
+          test "$(git rev-parse HEAD)" = "0b59a8de4615599e17b209b3034d8436a52304f1"
+          python -m py_compile hybrid_semantics.py analysis_bundle.py analysis_bundle_quality.py tests/test_hybrid_semantics.py
+          echo HYBRID_GATE_0_SYNTAX_PASS
+      - name: Install exact existing PsyAI test dependencies
+        run: |
+          cd private_psyai
+          python -m pip install -q -r requirements.txt -r requirements-dev.txt
+      - name: Gate 1 vector graph NLI safety
+        run: |
+          cd private_psyai
+          PYTHONHASHSEED=34 python -m pytest -q tests/test_hybrid_semantics.py
+          echo HYBRID_GATE_1_PASS
+      - name: Gate 2 existing independent V2 and CASE34 regressions
+        run: |
+          cd private_psyai
+          PYTHONHASHSEED=13 python -m pytest -q tests/test_case34_direct_atomic_mode.py tests/test_case34_source_attribution_and_symptom.py tests/test_case34_final_admission_regression.py tests/test_analysis_bundle_premises.py
+          echo HYBRID_GATE_2_V2_PASS
+      - name: Gate 3 analysis route and no-model PDF/DOCX
+        run: |
+          cd private_psyai
+          PYTHONHASHSEED=41 python -m pytest -q tests/test_analysis_bundle_workflow.py tests/test_case34_call_count_optimization.py
+          echo HYBRID_GATE_3_PIPELINE_PASS
+      - name: Always clean private sources
+        if: ${{ always() }}
+        run: rm -rf private_psyai
