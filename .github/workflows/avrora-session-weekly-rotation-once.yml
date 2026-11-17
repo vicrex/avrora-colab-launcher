@@ -1,0 +1,47 @@
+name: AVRORA weekly uptime rotation null - one-shot regression (NO_TRADE)
+on:
+  push:
+    branches: [audit/session-weekly-rotation-tests-once-20261117]
+    paths: [.github/workflows/avrora-session-weekly-rotation-once.yml]
+permissions:
+  contents: read
+concurrency:
+  group: avrora-session-weekly-rotation-one-shot-20261117
+  cancel-in-progress: false
+jobs:
+  verify:
+    name: Pinned private offline synthetic rotation tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      REAL: "OFF"
+      HOLDOUT: "SEALED"
+      PRIVATE_SHA: "8ac20a0c710ab3972b8ced2ed4b88654ec4bb34d"
+    steps:
+      - name: Require existing read-only key
+        env:
+          HAS_KEY: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY != '' }}
+        run: |
+          test "$HAS_KEY" = "true" || { echo "BLOCKED_PRIVATE_CODE_KEY"; exit 2; }
+      - uses: actions/checkout@v4
+        with:
+          repository: vicrex/AVRORA
+          ref: 8ac20a0c710ab3972b8ced2ed4b88654ec4bb34d
+          path: code
+          persist-credentials: false
+          ssh-key: ${{ secrets.AVRORA_RESEARCH_CODE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqKLsabgH5C9okWi0dh2l9GKJl"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check immutable source and independent deterministic synthetic tests
+        working-directory: code
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PRIVATE_SHA"
+          python -m unittest research.strategy_search.test_session_weekly_uptime_null_20261117 -v
+          echo "PASS_UPTIME_NULL_SYNTHETIC_6_OFFLINE"
+      - name: Destroy temporary code
+        if: ${{ always() }}
+        run: rm -rf code
