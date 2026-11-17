@@ -44,12 +44,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Run syntax check and 8 synthetic admission regressions
+      - name: Verify prompt contracts and fail-closed admission without Gemma
         shell: bash
         run: |
           set +e
           cd private_psyai
-          python -m py_compile analysis_bundle.py analysis_bundle_quality.py cognitive_evidence.py cognitive_evidence_report.py deep_analysis_report.py analysis_bundle_views.py tests/test_case34_final_admission_regression.py > ../private_test_output.log 2>&1
+          python -m py_compile analysis_bundle.py analysis_bundle_quality.py cognitive_evidence.py cognitive_evidence_report.py deep_analysis_report.py analysis_bundle_views.py tests/test_case34_final_admission_regression.py tests/test_case34_prompt_contracts.py > ../private_test_output.log 2>&1
           syntax=$?
           if [ "$syntax" -ne 0 ]; then
             echo PSYAI_PATCH_SYNTAX_FAIL
@@ -78,7 +78,7 @@ jobs:
             echo PSYAI_PATCH_DEPS_BLOCKED
             exit 2
           fi
-          python -m pytest -q tests/test_case34_final_admission_regression.py --junitxml=../synthetic-junit.xml > ../private_test_output.log 2>&1
+          python -m pytest -q tests/test_case34_final_admission_regression.py tests/test_case34_prompt_contracts.py tests/test_v_shared_schema.py tests/test_atomic_v15_transport.py tests/test_analysis_bundle_premises.py tests/test_analysis_bundle_quality.py --junitxml=../synthetic-junit.xml > ../private_test_output.log 2>&1
           result=$?
           if [ "$result" -ne 0 ]; then
             python - <<'PY'
@@ -93,7 +93,7 @@ jobs:
                           problem=t.find('failure')
                           if problem is None: problem=t.find('error')
                           text=problem.text or ''
-                          line=re.search(r'test_case34_final_admission_regression\.py:(\d+):',text)
+                          line=re.search(r'(?:test_[a-z0-9_]+)\.py:(\d+):',text)
                           print('PSYAI_SYNTHETIC_TEST_FAIL',name,kind,
                                 'source_line='+line.group(1) if line else 'source_line=UNKNOWN')
           except Exception:
@@ -101,9 +101,9 @@ jobs:
           PY
           fi
           if [ "$result" -eq 0 ]; then
-            echo PSYAI_EIGHT_REGRESSIONS_PASS
+            echo PSYAI_PROMPT_AND_ADMISSION_REGRESSIONS_PASS
           else
-            echo PSYAI_EIGHT_REGRESSIONS_FAIL
+            echo PSYAI_PROMPT_AND_ADMISSION_REGRESSIONS_FAIL
           fi
           exit "$result"
       - name: Remove temporary private source and logs
