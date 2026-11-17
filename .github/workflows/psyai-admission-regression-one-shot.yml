@@ -44,7 +44,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Three checks: syntax, atomic safety, and full regression without Gemma
+      - name: 'Three checks - syntax, atomic safety, full regression (no Gemma)'
         shell: bash
         run: |
           set +e
