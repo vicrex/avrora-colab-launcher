@@ -50,6 +50,17 @@ def main():
     assert "__PSYAI_" not in script
     assert "synthetic_fixture_only_34_turns" not in script  # base64 only
     compile(script,"ephemeral_synthetic_colab.py","exec")
+    # Controlled allocation fallback must not accidentally rerun a completed
+    # model analysis. Validate only synthetic logs, never a private transcript.
+    assert 'for variant in ("T4","L4")' in RUNNER.read_text("utf-8")
+    assert '"T4" in detected or "L4" in detected' in REMOTE.read_text("utf-8")
+    import tempfile
+    with tempfile.TemporaryDirectory() as directory:
+        logfile=Path(directory)/"cli.log"
+        logfile.write_text("Failed to assign accelerator: HTTP 412",encoding="utf-8")
+        assert bridge.safe_gpu_allocation_reason(logfile)=="COLAB_GPU_ASSIGNMENT_REJECTED"
+        logfile.write_text("Internal remote Python error",encoding="utf-8")
+        assert bridge.safe_gpu_allocation_reason(logfile)=="OTHER_FAILURE"
     # Never print the injected source, helper or synthetic payload to CI logs.
     print("PASS_CASE34_COLAB_FULL_ARCHIVE_SHA_SYNTHETIC_REMOTE_SYNTAX")
     print("PASS_CASE34_COLAB_PRIVATE_FILES_FILTERED_COUNT_GT_100")
