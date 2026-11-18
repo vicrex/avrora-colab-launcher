@@ -1,5 +1,23 @@
 # PsyAI → Colab: ЕДИНСТВЕННЫЙ порядок запуска (18.11.2026)
 
+## ✅ VERIFIED_GPU8_SERVER_BASELINE — 18.11.2026
+
+**СТАТУС: ПРОВЕРЕНО ПОВТОРНЫМ ЧТЕНИЕМ GITHUB + АРТЕФАКТА.** Это **один GPU-smoke**, а не полный CASE34.
+
+- GitHub Actions **[Run 44244184390](https://github.com/vicrex/avrora-colab-launcher/actions/runs/44244184390)**: `completed/success`, job `134598998804`: `success`. Git commit **`57d3ac98d7916b573bcaa30d970840bf9b37746d`**, script revision `57d3ac98d791`.
+- Получен `psyai-gpu8-colab-44244184390` (artifact ID **14400829035**, ZIP digest `sha256:10efe6e19eaf1d13a8505563d731407e0517d4858c896c559be71aa66bb2e4f2`). JSON из ZIP проверен повторным вычислением SHA-256 canonical JSON: `fb52b4cba4f909c388d776b29f29adeb8f7134cc89b0cf09402a4166022dc048` — **совпал**.
+- `status=GPU8_MODEL_PREFLIGHT_PASS`, `generation_verified=true`, `case34_full_e2e=false`, `cli_exit_code=0`, `journal.final_status_published=true`, 21/21 commit statuses записаны без ошибок.
+- T4 **15360 MiB физически**, после резервирования избыточной памяти доступно **7946 MiB** при целевом лимите **8192 MiB**; реальный GPU-пик `llama-server` — **3452 MiB**.
+- Модель `google/gemma-4-12B-it-qat-q4_0-gguf`, revision `ef7b15515d7ed7f34305a08edb5717e7989d6dc9`, GGUF `gemma-4-12b-it-qat-q4_0.gguf`, SHA-256 `93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b` — сверено на удалённом Colab.
+- Официальные предварительно собранные CUDA-бинарники llama.cpp release `b11774` (два проверяемых SHA-256 — ниже); не компилировать `llama.cpp`. **Исправление, давшее PASS**: вместо `llama-cli`/`llama-completion` использовать `llama-server` на `127.0.0.1` → `GET /health` → `GET /v1/models` → `POST /v1/chat/completions` (`stream=false`, `max_tokens=96`, `temperature=0`, `reasoning_effort=none`, `enable_thinking=false`). Результат сверять по `choices[0].message.content` и `usage.completion_tokens`, а **не по консольному stdout**.
+- **Доказательство ответа:** `completion_tokens=3`, `content_chars=10`, `finish_reason=stop`, `recognized_canary=true`, `reply_schema=true`, `reasoning_only=false`. Вывод модели не сохранялся в публичный GitHub.
+- **Замеры:** загрузка модели 124.78 с, её SHA-проверка 41.28 с, `server_ready_seconds=114.65`, `inference_seconds=57.59`, CUDA подготовлена к 215.82 с от старта, `gpu8_inference` 388.06 с от старта, полный Colab `elapsed_seconds=391.49` с, общий GitHub bridge `399.07` с.
+- **Постоянный маршрут:** GitHub Actions `.github/workflows/psyai-gpu8-colab-one-shot.yml` → existing `AVRORA_COLAB_ADC_JSON_B64` → `google-colab-cli==0.7.4` → `tools/psyai_gpu8_colab_bridge.py` → `tools/psyai_case34_gpu8_colab_probe.py` → JSON `psyai_gpu8_proof.json`. Сначала смотреть последний run/status и этот pinned-good commit; не открывать браузер, не требовать повторной авторизации, не создавать другие launcher и не делать новые cold-runs без изменения модели/сервера.
+- **ОБЯЗАТЕЛЬНАЯ ГРАНИЦА:** полный разбор CASE34, E5+NLI+V2+граф, PDF/DOCX и цель 600–900 с **не проверены этим smoke**. Для них нужен отдельный закрытый Linux-совместимый E2E с защищённым источником. `FULL_CASE34_COLAB_NOT_READY` остаётся актуальным до его отдельного фактического прогона.
+
+**Последующие исторические FAIL-разделы ниже описывают УСТРАНЁННЫЕ дефекты старых запусков; они не отменяют подтверждённый SUCCESS выше.** Не менять рабочие pinned версии ради косметики.
+
+
 **Источник истины для следующей сессии/агента.** Перед ЛЮБЫМ изменением или запуском PsyAI через Colab читать этот файл. Не создавать новый launcher, новую авторизацию, платный браузер или параллельный GPU run.
 
 ## 1. Что уже создано и подтверждено
@@ -100,14 +118,14 @@
 
 **Решение:** `STOP_DUPLICATE_GPU8_CANARY`. Нельзя снова запускать исходную проверку `maяк` с тем же интерфейсом и надеяться на иной результат. Доказана работоспособность входа в Colab, загрузки модели, CUDA, GPU-выделения; **не доказана полезная генерация**. Exit code 0 и GPU-pid сами по себе её не подтверждают.
 
-**Следующий рациональный способ (ещё НЕ реализован и НЕ запущен):** использовать тот же SHA-pinned готовый `llama-server` из релиза `b11774`, localhost `127.0.0.1`, запрос `POST /v1/chat/completions` с коротким **синтетическим** промптом; проверять **JSON** `choices[].message.content` и `usage.completion_tokens` отдельно от stderr/stdout сервера. Официальная документация: https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md . Сервер — тот же тип runtime, который использует PsyAI. Перед выделением GPU тестировать парсер JSON и таймауты **без модели**; только после проверенного patch+difference, отдельного подтверждения отсутствия текущего run и одноразовой принятой командной процедуры допустим следующий холодный тест.
+**ИСТОРИЧЕСКАЯ ЗАПИСЬ ДО УСПЕХА; УЖЕ РЕАЛИЗОВАНО И PASS В RUN 44244184390:** использовать тот же SHA-pinned готовый `llama-server` из релиза `b11774`, localhost `127.0.0.1`, запрос `POST /v1/chat/completions` с коротким **синтетическим** промптом; проверять **JSON** `choices[].message.content` и `usage.completion_tokens` отдельно от stderr/stdout сервера. Официальная документация: https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md . Сервер — тот же тип runtime, который использует PsyAI. Перед выделением GPU тестировать парсер JSON и таймауты **без модели**; только после проверенного patch+difference, отдельного подтверждения отсутствия текущего run и одноразовой принятой командной процедуры допустим следующий холодный тест.
 
 **Границы:** отдельный `CASE34_FULL_E2E` сейчас `NOT_STARTED`; модельная canary-проверка и PDF/DOCX не проведены. Приватный оригинал остаётся в закрытом Drive. Установленный ADC Colab не обеспечивает Drive scope; не нарушать эту границу.
 
 
 ## 10. Серверный JSON-прогон: зафиксированный протокол
 
-**Реально запущен контрольный run [44244184390](https://github.com/vicrex/avrora-colab-launcher/actions/runs/44244184390) по атомарному коммиту `57d3ac98d7916b573bcaa30d970840bf9b37746d`.** Он использует уже существующий `AVRORA_COLAB_ADC_JSON_B64` и `google-colab-cli==0.7.4`. На момент записи этого пункта результат **PENDING**, а не PASS.
+**Реально выполнен и подтверждён SUCCESS контрольный run [44244184390](https://github.com/vicrex/avrora-colab-launcher/actions/runs/44244184390) по атомарному коммиту `57d3ac98d7916b573bcaa30d970840bf9b37746d`.** Он использует уже существующий `AVRORA_COLAB_ADC_JSON_B64` и `google-colab-cli==0.7.4`. Итог после завершения: **completed/success**, SHA-bound receipt подтверждён (см. VERIFIED_GPU8_SERVER_BASELINE выше).
 
 Проверка выполняется из действующего workflow `.github/workflows/psyai-gpu8-colab-one-shot.yml` и `tools/psyai_case34_gpu8_colab_probe.py`: Colab T4 → резерв VRAM ≤8192 МиБ → SHA-256 pinned Gemma GGUF → два официальных SHA-проверенных CUDA-архива `llama.cpp b11774` → локальный `llama-server` на `127.0.0.1:<случайный свободный порт>` → готовность `/health` → `GET /v1/models` → **`POST /v1/chat/completions`**, `stream=false`, `temperature=0`, `max_tokens=96`, `reasoning_effort=none`, `chat_template_kwargs.enable_thinking=false`. Контрольный вопрос синтетический, не содержит ожидаемого ответа. Отдельно проверяются поле `choices[0].message.content`, `usage.completion_tokens>0`, правильный ответ (`lighthouse`/«маяк»), пик процесса ≤8192 МиБ. Никакие сырые ответы, токены доступа или данные консультаций не публикуются.
 
