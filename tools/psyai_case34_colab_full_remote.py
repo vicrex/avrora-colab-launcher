@@ -91,11 +91,31 @@ def command(cmd, cwd=None, env=None, timeout=1000):
             return False
 
 def install_deps(source):
-    if not command([sys.executable,"-m","pip","-q","install","--disable-pip-version-check",
-                    "-r","requirements.txt","-r","requirements-semantic.txt",
+    # Proven by separate NO-GPU pip dry-run 44263605840 (Python 3.12):
+    # pinned tokenizers 0.23.3 conflicts with transformers==4.57.1, which
+    # requires tokenizers>=0.22.0,<=0.23.0. Do NOT change the Windows
+    # requirements or relax E5/ONNX verification globally.
+    semantic=(source/"requirements-semantic.txt").read_text("utf-8")
+    old_pin="tokenizers==0.23.3"
+    if semantic.count(old_pin)!=1:
+        raise RuntimeError("SEMANTIC_REQUIREMENTS_PIN_UNEXPECTED")
+    with tempfile.TemporaryDirectory(prefix="psyai-nli-compat-") as temporary:
+        compatible=Path(temporary)/"semantic-colab.txt"
+        compatible.write_text(semantic.replace(old_pin,"tokenizers==0.22.1"),"utf-8")
+        ok=command([sys.executable,"-m","pip","-q","install","--disable-pip-version-check",
+                    "-r","requirements.txt","-r",str(compatible),
                     "psutil>=5.9,<8","transformers==4.57.1","sentencepiece==0.2.1",
-                    "huggingface_hub>=0.32,<1"],cwd=source,timeout=950):
+                    "huggingface_hub>=0.32,<1"],cwd=source,timeout=950)
+    if not ok:
         raise RuntimeError("PRODUCTION_DEPENDENCIES_UNAVAILABLE")
+    try:
+        import importlib.metadata as metadata
+        import transformers,tokenizers,onnxruntime
+        if (metadata.version("tokenizers")!="0.22.1"
+                or metadata.version("transformers")!="4.57.1"):
+            raise RuntimeError("PINNED_TRANSFORMERS_TOKENIZERS_MISMATCH")
+    except Exception:
+        raise RuntimeError("PINNED_TRANSFORMERS_TOKENIZERS_IMPORT_FAILED") from None
 
 def prepare_model(work,gpu):
     from huggingface_hub import hf_hub_download
