@@ -98,7 +98,7 @@ jobs:
         if: ${{ always() }}
         shell: bash
         run: |
-          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-\}" ]; then
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
             rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
           fi
           rm -f psyai_gpu8_remote.log
