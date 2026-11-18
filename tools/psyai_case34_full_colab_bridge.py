@@ -115,6 +115,16 @@ def build_ephemeral_script(src_sha,packed,original,helper):
     return text
 
 
+def safe_gpu_allocation_reason(log):
+    """Return only a fixed reason code; no remote log is emitted."""
+    fragment=log.read_bytes()[-16000:].decode("utf-8","replace").lower()
+    if any(x in fragment for x in ("failed to assign","toomanyassignments","http 412","status 412","accelerator unavailable")):
+        return "COLAB_GPU_ASSIGNMENT_REJECTED"
+    if any(x in fragment for x in ("not entitled","no access to gpu")):
+        return "COLAB_GPU_NOT_ENTITLED"
+    return "OTHER_FAILURE"
+
+
 def bounded_receipt(log,original_sha,expected_src):
     # Never expose or return raw remote log content. Parse ONLY exact bounded
     # generated marker line and then restrict its fields by schema.
