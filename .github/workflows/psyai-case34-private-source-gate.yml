@@ -1,11 +1,8 @@
 name: PsyAI CASE34 secure source readiness (NO GPU)
 
 on:
+  # Explicit owner action ONLY, no extra costs before OAuth consent.
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/psyai-case34-private-source-gate.yml'
 
 permissions:
   contents: read
@@ -20,7 +17,7 @@ jobs:
     timeout-minutes: 12
     env:
       HAS_PSYAI_SOURCE_KEY: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
-      HAS_PRIVATE_DRIVE_ADC: ${{ secrets.AVRORA_PRIVATE_DRIVE_ADC_JSON_B64 != '' }}
+      HAS_CASE34_READONLY_ADC: ${{ secrets.PSYAI_CASE34_DRIVE_READONLY_ADC_B64 != '' }}
       HAS_COLAB_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
     steps:
       - name: Public launcher checkout (only workflow and static tests)
@@ -41,20 +38,21 @@ jobs:
             echo "BLOCKED_EXISTING_PSYAI_PRIVATE_DEPLOY_KEY_NOT_PRESENT"
             exit 2
           fi
-          if [ "$HAS_PRIVATE_DRIVE_ADC" != "true" ]; then
-            echo "PRIVATE_DRIVE_SECRET_NOT_SET_TEST_EXISTING_COLAB_ADC_SCOPE_ONLY"
+          if [ "$HAS_CASE34_READONLY_ADC" != "true" ]; then
+            echo "BLOCKED_PSYAI_CASE34_READONLY_DRIVE_CONSENT_REQUIRED"
+            exit 2
           fi
           if [ "$HAS_COLAB_ADC" != "true" ]; then
             echo "BLOCKED_EXISTING_COLAB_ADC_NOT_PRESENT"
             exit 2
           fi
-          echo "PASS_ALL_EXISTING_CREDENTIAL_REFERENCES_PRESENT_NO_NEW_AUTH"
+          echo "PASS_EXISTING_PSYAI_SOURCE_COLAB_AND_CASE34_READONLY_CREDENTIALS"
 
       - name: Checkout PINNED private PsyAI source for read-only preflight
         uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: fde27dd19e832379da1750593eeda6c52b85dc09
+          ref: 5a7a8f50759e4d4ad23da4ac0f5ea9ada6f53729
           path: private_psyai
           fetch-depth: 1
           persist-credentials: false
@@ -66,13 +64,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C private_psyai rev-parse HEAD)" = "fde27dd19e832379da1750593eeda6c52b85dc09"
+          test "$(git -C private_psyai rev-parse HEAD)" = "5a7a8f50759e4d4ad23da4ac0f5ea9ada6f53729"
           python -B - <<'PY'
           import pathlib
           path=pathlib.Path('private_psyai/tools/case34_private_drive_preflight.py')
           source=path.read_bytes()
           compile(source,'private_preflight.py','exec')
           assert b'CASE34_PRIVATE_SOURCE_VERIFIED' in source
+          assert b'https://www.googleapis.com/auth/drive.readonly' in source
+          assert b'PRIVATE_DRIVE_GRANTED_SCOPE_NOT_READONLY' in source
           assert b'os.open(temp,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)' in source
           print('PASS_PRIVATE_SOURCE_PREFLIGHT_STATIC_NO_GPU')
           PY
@@ -83,10 +83,9 @@ jobs:
       - name: Verify original private Drive bytes and roles WITHOUT upload
         shell: bash
         env:
-          # Fallback only when the ALREADY GRANTED scope declares Drive.
-          # The private preflight rejects cloud-only Colab scopes without
-          # a token refresh, Drive GET or new consent.
-          PSYAI_CASE34_PRIVATE_DRIVE_ADC_B64: ${{ secrets.AVRORA_PRIVATE_DRIVE_ADC_JSON_B64 || secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+          # EXACTLY read-only scope. Never use trading / Colab / full-Drive
+          # credentials for a patient's consultation source.
+          PSYAI_CASE34_PRIVATE_DRIVE_ADC_B64: ${{ secrets.PSYAI_CASE34_DRIVE_READONLY_ADC_B64 }}
         run: |
           set +x
           python -B private_psyai/tools/case34_private_drive_preflight.py --receipt case34-source-preflight.json
