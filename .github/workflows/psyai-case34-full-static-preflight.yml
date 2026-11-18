@@ -1,0 +1,66 @@
+name: PsyAI CASE34 full Colab static packaging audit (NO GPU, NO SOURCE SECRET)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/psyai-case34-full-static-preflight.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-case34-full-static-one
+  cancel-in-progress: false
+
+jobs:
+  private-src-packaging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_DEPLOY_KEY_OK: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Checkout public bridge and synthetic-only scripts
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check private checkout authorization without reading CASE34
+        shell: bash
+        run: |
+          test "$SOURCE_DEPLOY_KEY_OK" = "true" || {
+            echo "BLOCKED_PRIVATE_PSYAI_SOURCE_DEPLOY_KEY_MISSING"; exit 2;
+          }
+
+      - name: Checkout fixed private PsyAI SHA, read-only
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: d9d69f3b9c55342f74e6d17d041ebec1376b64fb
+          path: private_psyai
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+
+      - name: Compile actual private source and synthetic remote Colab script
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C private_psyai rev-parse HEAD)" = "d9d69f3b9c55342f74e6d17d041ebec1376b64fb"
+          python -B tools/test_psyai_case34_colab_full_preflight.py
+          echo "PASS_COLAB_FULL_OFFLINE_STATIC_CONTRACT_NO_MODEL_NO_CASE34"
+
+      - name: Destroy ephemeral private source directory
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf private_psyai
+          echo 'PASS_OFFLINE_PRIVATE_CHECKOUT_ERASED'
