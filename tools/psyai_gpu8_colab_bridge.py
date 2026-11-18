@@ -25,7 +25,7 @@ ALLOWED_STAGES={
     "t4_gpu", "eight_gib_vram_partition", "install_hf_client",
     "model_download", "model_sha256", "pinned_model", "llama_clone",
     "cuda_configure", "cuda_build", "cuda_binary_download",
-    "cuda_runtime_download", "cuda_llama_binary",
+    "cuda_runtime_download", "cuda_llama_binary", "server_ready",
     "model_inference", "gpu8_inference", "stopped"
 }
 

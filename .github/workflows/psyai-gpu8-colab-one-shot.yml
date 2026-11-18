@@ -56,6 +56,25 @@ jobs:
           assert argv[0]=="/tmp/llama-completion"
           assert all(flag in argv for flag in ("--jinja","--single-turn","--simple-io","--no-display-prompt"))
           assert "--no-conversation" not in argv
+          # No GPU is needed for these positive/negative source gates.
+          from pathlib import Path
+          assert module.server_command(Path("/tmp/llama-server"),Path("/tmp/model.gguf"),18086)[0]=="/tmp/llama-server"
+          request=module.build_chat_request("test-model")
+          assert request["chat_template_kwargs"]["enable_thinking"] is False
+          assert request["reasoning_effort"]=="none"
+          assert request["max_tokens"]>=96
+          assert "lighthouse" not in request["messages"][0]["content"].lower()
+          good={"choices":[{"message":{"content":"Lighthouse."},"finish_reason":"stop"}],"usage":{"completion_tokens":4}}
+          assert module.verify_server_chat_response(good)[0]
+          russian={"choices":[{"message":{"content":"Маяк"},"finish_reason":"stop"}],"usage":{"completion_tokens":4}}
+          assert module.verify_server_chat_response(russian)[0]
+          assert module.verify_server_chat_response({})[1]=="INVALID_CHAT_RESPONSE_SCHEMA"
+          empty={"choices":[{"message":{"content":"","reasoning_content":"hidden"},"finish_reason":"length"}],"usage":{"completion_tokens":96}}
+          assert module.verify_server_chat_response(empty)[1]=="ONLY_REASONING_NO_FINAL"
+          no_tokens={"choices":[{"message":{"content":"Lighthouse."}}],"usage":{"completion_tokens":0}}
+          assert module.verify_server_chat_response(no_tokens)[1]=="NO_COMPLETION_TOKENS"
+          wrong={"choices":[{"message":{"content":"Other."}}],"usage":{"completion_tokens":4}}
+          assert module.verify_server_chat_response(wrong)[1]=="NO_RECOGNIZED_GENERATED_CANARY"
           print("PASS_GPU8_RUNNER_STATIC_GUARD")
           PY
       - name: Require existing AVRORA Google Colab ADC; do not reauthorize
