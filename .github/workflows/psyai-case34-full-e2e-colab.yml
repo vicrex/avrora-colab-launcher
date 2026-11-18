@@ -11,6 +11,7 @@ on:
       - '.github/psyai-case34-full-retry-deps0221-20261118.marker'
       - '.github/psyai-case34-full-early-receipt-20261118.marker'
       - '.github/psyai-case34-full-retry-rootpath-20261118.marker'
+      - '.github/psyai-case34-full-retry-t4-l4-20261118.marker'
 
 permissions:
   contents: read
