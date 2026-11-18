@@ -78,3 +78,28 @@
 - Установленная причина **не** доказана исключительно последним журналом: подтверждено, что прежняя процедура **не дала** проверяемого ответа, несмотря на код 0 и реальное использование GPU. Это достаточный повод для адресной замены CLI без переустановки Colab и модели.
 - **Контрольный запуск допускается только один**, после проверки `py_compile`, положительных/отрицательных тестов канарейки и структуры CLI-аргументов. Замена `llama-cli` на `llama-completion` и одна транзакционная правка кода/workflow в **одном Git-коммите** (workflow запускается от `push` ровно один раз); затем readback run ID, stages и SHA receipt. Если снова FAIL — **НЕ перезапускать** до анализа нового receipt.
 - После `GPU8_MODEL_PREFLIGHT_PASS` переход к отдельной приватной приёмке CASE34; использование `llama-completion` в canary никак не заменяет настоящую E/S/V2 архитектуру PsyAI.
+
+
+## 9. Финал запуска llama-completion и СТОП повторным cold-run
+
+**Проверено 18.11.2026, новый Run [44240472635](https://github.com/vicrex/avrora-colab-launcher/actions/runs/44240472635), SHA `17b240e601fdf354842bb5dd465ed2ba57501aef`:**
+
+| Критерий | Подтверждённые данные |
+| --- | --- |
+| Github Actions | `completed / failure` |
+| Статический валидатор Python и негативные тесты ответа | PASS |
+| Colab GPU | Tesla T4, резерв до 8192 MiB PASS |
+| GGUF Gemma 4 12B | SHA-256 PASS |
+| CUDA | Official release `b11774`, `cuda_llama_binary` PASS |
+| Реальная GPU память процесса | пик 3534 MiB |
+| Новый транспорт | `llama-completion --jinja --single-turn --simple-io` |
+| Результат | `NO_RECOGNIZED_GENERATED_CANARY`, `generation_verified=false`, FAIL |
+| stdout (только агрегаты, **не сырой ответ**) | 3217 байт / 2549 непробельных символов, `has_llama_timing=true`, русский и английский canary — `false` |
+| Время | remote 438.25 с, GitHub bridge 458.41 с |
+| Подтверждение | SHA remote receipt `9c8b08ac112dca4eefbbc4564b6b123f32d205f9e3ccd5760f513a0adb049946`, GitHub artifact `psyai-gpu8-colab-44240472635` |
+
+**Решение:** `STOP_DUPLICATE_GPU8_CANARY`. Нельзя снова запускать исходную проверку `maяк` с тем же интерфейсом и надеяться на иной результат. Доказана работоспособность входа в Colab, загрузки модели, CUDA, GPU-выделения; **не доказана полезная генерация**. Exit code 0 и GPU-pid сами по себе её не подтверждают.
+
+**Следующий рациональный способ (ещё НЕ реализован и НЕ запущен):** использовать тот же SHA-pinned готовый `llama-server` из релиза `b11774`, localhost `127.0.0.1`, запрос `POST /v1/chat/completions` с коротким **синтетическим** промптом; проверять **JSON** `choices[].message.content` и `usage.completion_tokens` отдельно от stderr/stdout сервера. Официальная документация: https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md . Сервер — тот же тип runtime, который использует PsyAI. Перед выделением GPU тестировать парсер JSON и таймауты **без модели**; только после проверенного patch+difference, отдельного подтверждения отсутствия текущего run и одноразовой принятой командной процедуры допустим следующий холодный тест.
+
+**Границы:** отдельный `CASE34_FULL_E2E` сейчас `NOT_STARTED`; модельная canary-проверка и PDF/DOCX не проведены. Приватный оригинал остаётся в закрытом Drive. Установленный ADC Colab не обеспечивает Drive scope; не нарушать эту границу.
