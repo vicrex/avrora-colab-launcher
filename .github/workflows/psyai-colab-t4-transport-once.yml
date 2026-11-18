@@ -1,0 +1,93 @@
+name: PsyAI Colab T4 allocation diagnosis one-shot (NO Gemma, NO CASE34)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/psyai-colab-t4-transport-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-colab-cpu-global-nonparallel
+  cancel-in-progress: false
+
+jobs:
+  transport-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      HAS_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require existing ADC, never start a login
+        run: |
+          test "$HAS_ADC" = 'true' || { echo 'BLOCKED_EXISTING_ADC_MISSING';exit 2; }
+      - name: Write ephemeral ADC under runner temporary root
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python -B tools/write_adc.py
+      - name: Install exact working google-colab-cli version
+        run: python -m pip -q install --disable-pip-version-check 'google-colab-cli==0.7.4'
+      - name: Single minimal T4 transport run and sanitized problem classification
+        shell: bash
+        run: |
+          set +x
+          python -B - <<'PY'
+          import hashlib,json,re,subprocess,sys,time,pathlib
+          target=pathlib.Path('psyai_t4_transport_receipt.json')
+          started=time.monotonic()
+          report={'schema':'PSYAI_T4_TRANSPORT_DIAGNOSTIC_V1',
+                  'status':'BLOCKED','reason_code':'UNVERIFIED',
+                  'full_case34':False,'gemma_loaded':False,
+                  'patient_data_used':False,'source_transferred':False}
+          try:
+              p=subprocess.run(['colab','--auth=adc','run','--gpu','T4',
+                               '--timeout','180',
+                               'tools/psyai_colab_t4_transport_canary.py'],
+                               capture_output=True,timeout=450,check=False)
+              data=(p.stdout+p.stderr).decode('utf8','replace').lower()
+              report['cli_exit_code']=p.returncode
+              if p.returncode==0 and 'psyai_t4_transport_check=pass' in data:
+                  report.update(status='PASS',reason_code='T4_TRANSPORT_PROVEN')
+              else:
+                  patterns=[
+                      ('COLAB_QUOTA_OR_RESOURCE_LIMIT',r'(quota|resource.exhausted|quota.exceeded|exceeded.*limit)'),
+                      ('COLAB_GPU_ASSIGNMENT_REJECTED',r'(failed to assign|accelerator.*unavailable|status.*412|http 412)'),
+                      ('COLAB_AUTH_OR_TOKEN_FAILURE',r'(unauthorized|permission.denied|invalid.grant|401|403)'),
+                      ('COLAB_RATE_LIMIT',r'(too many requests|429|rate.limit)'),
+                      ('COLAB_REMOTE_EXECUTION_ERROR',r'(traceback|exception|error:)'),
+                  ]
+                  report['reason_code']=next((name for name,pat in patterns
+                       if re.search(pat,data,re.I)),'COLAB_TRANSPORT_RESPONSE_MISSING')
+          except subprocess.TimeoutExpired:
+              report['reason_code']='COLAB_TRANSPORT_TIMEOUT'
+          report['seconds']=round(time.monotonic()-started,2)
+          canonical=json.dumps(report,sort_keys=True,separators=(',',':'),ensure_ascii=True)
+          report['receipt_sha256']=hashlib.sha256(canonical.encode('ascii')).hexdigest()
+          target.write_text(json.dumps(report,sort_keys=True,separators=(',',':'),ensure_ascii=True)+'\n',encoding='ascii')
+          print('PSYAI_T4_TRANSPORT_STATUS='+report['status'],flush=True)
+          print('PSYAI_T4_TRANSPORT_REASON='+report['reason_code'],flush=True)
+          raise SystemExit(0 if report['status']=='PASS' else 2)
+          PY
+      - name: Upload only sanitized tiny transport receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-t4-transport-${{ github.run_id }}
+          path: psyai_t4_transport_receipt.json
+          retention-days: 3
+          if-no-files-found: warn
+      - name: Destroy temporary ADC and output
+        if: ${{ always() }}
+        run: |
+          test -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" || rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          rm -f psyai_t4_transport_receipt.json
+          echo 'PASS_PSYAI_T4_TRANSPORT_TEMP_CLEANED'
