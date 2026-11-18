@@ -98,7 +98,8 @@ jobs:
           import embedding_model
           import analysis_bundle
           assert app.app is not None
-          assert model_runtime.MODEL_SHA == "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b"
+          assert model_runtime.MODEL_FILE == "gemma-4-12b-it-qat-q4_0.gguf"
+          assert model_runtime.MODEL_REV == "ef7b15515d7ed7f34305a08edb5717e7989d6dc9"
           print("PASS_REAL_PSYAI_APP_LINUX_IMPORT_NO_MODEL")
           PY
 
