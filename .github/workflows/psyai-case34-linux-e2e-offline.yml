@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: 4f364ecedbbbc4b5de5205c4058b6972684d3ce4
+          ref: 83679d96b8b13f269bd82f1df21501d6428e2eeb
           path: private_psyai
           persist-credentials: false
           ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C private_psyai rev-parse HEAD)" = "4f364ecedbbbc4b5de5205c4058b6972684d3ce4"
+          test "$(git -C private_psyai rev-parse HEAD)" = "83679d96b8b13f269bd82f1df21501d6428e2eeb"
           cd private_psyai
           python -B - <<'PY'
           from pathlib import Path
