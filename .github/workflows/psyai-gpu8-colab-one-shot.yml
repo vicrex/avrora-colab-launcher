@@ -6,6 +6,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/psyai-gpu8-colab-one-shot.yml'
+      - 'tools/psyai_case34_gpu8_colab_probe.py'
+      - 'tools/psyai_gpu8_colab_bridge.py'
+      - 'tools/psyai_gpu8_status.py'
 
 permissions:
   contents: read
@@ -39,6 +42,10 @@ jobs:
           assert module.CAP_MIB==8192
           assert module.MODEL_SHA=="93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b"
           assert module.MARKER=="PSYAI_GPU8_COLAB_RECEIPT="
+          assert module.CUDA_TAG=="b11774"
+          assets={name:digest for name,digest,_ in module.CUDA_ASSETS}
+          assert assets["llama-b11774-bin-ubuntu-cuda-12.8-x64.tar.gz"]=="7d03c8482b62c9533d47e777c0d3ca2edce6e57916b51f587a4576d332757fbb"
+          assert assets["cudart-llama-b11774-bin-ubuntu-cuda-12.8-x64.tar.gz"]=="d4fe9a68a521add2001396fdc324dcc613104a2e7a175b68823448793bf8eb9f"
           print("PASS_GPU8_RUNNER_STATIC_GUARD")
           PY
       - name: Require existing AVRORA Google Colab ADC; do not reauthorize
