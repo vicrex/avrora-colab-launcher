@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: 0e58842febb0808032df61834aa02ead60e0602b
+          ref: a35818b105390bbbe9fda3a63fd44adf0665af00
           path: private_psyai
           fetch-depth: 1
           persist-credentials: false
@@ -54,9 +54,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C private_psyai rev-parse HEAD)" = "0e58842febb0808032df61834aa02ead60e0602b"
+          test "$(git -C private_psyai rev-parse HEAD)" = "a35818b105390bbbe9fda3a63fd44adf0665af00"
           python -B tools/test_psyai_case34_colab_full_preflight.py
           python -B tools/test_psyai_case34_archived_entrypoint.py
+          python -B private_psyai/tools/test_case34_wall_budget_gate.py
+          echo "PASS_CASE34_COLAB_WALL_BUDGET_DEFAULT_900_OVERRIDE_1800"
           echo "PASS_COLAB_FULL_OFFLINE_STATIC_CONTRACT_NO_MODEL_NO_CASE34"
           echo "PASS_SYNTHETIC_T4_L4_FALLBACK_CONTRACT"
           echo "PASS_SAFE_PSYAI_FAILURE_TELEMETRY_CONTRACT"
