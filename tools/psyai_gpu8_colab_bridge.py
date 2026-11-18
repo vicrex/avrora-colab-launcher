@@ -77,7 +77,11 @@ def main():
         heartbeat_thread=threading.Thread(target=report_heartbeat,daemon=True)
         heartbeat_thread.start()
 
-        proc=subprocess.Popen(cli,stdout=subprocess.PIPE,
+        # GitHub token is only for the local status journal; never pass it
+        # to the Colab CLI subprocess or remote Python job.
+        child_env=os.environ.copy()
+        child_env.pop("GITHUB_TOKEN",None)
+        proc=subprocess.Popen(cli,env=child_env,stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT,text=True,
                               errors="replace",bufsize=1)
         def stop_timeout():
