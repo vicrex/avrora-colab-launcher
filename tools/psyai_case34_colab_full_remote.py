@@ -393,7 +393,16 @@ def main():
             if (proof.get("result_receipt")=="MISSING" and private_safe_code
                     and re.fullmatch(r"[A-Z0-9_]{3,90}",private_safe_code)):
                 proof["reason_code"]=private_safe_code
-            proof["model_started"]=proof.get("real_gemma") is True
+            # On a failed/incomplete run, real_gemma is deliberately False.
+            # That means "full generation NOT verified", not "zero tokens".
+            # Independently report observable completed server calls without
+            # ever granting full-case34 success from partial model output.
+            partial_calls=proof.get("model_calls",0)
+            partial_output=proof.get("output_tokens",0)
+            proof["partial_generation_observed"]=(type(partial_calls) is int
+                and type(partial_output) is int and partial_calls>0 and partial_output>0)
+            proof["model_started"]=(proof.get("real_gemma") is True
+                or proof["partial_generation_observed"])
             proof["full_case34"]=bool(proof.get("real_gemma"))
             proof["execution_exit_code"]=int(rc)
             proof["case34_execution_seconds"]=round(time.monotonic()-before,2)
