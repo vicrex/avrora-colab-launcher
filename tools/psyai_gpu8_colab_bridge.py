@@ -32,17 +32,30 @@ def canonical(d):
     return json.dumps(d,sort_keys=True,separators=(",",":"),ensure_ascii=True)
 
 def classify_cli(text):
+    """Classify the real CLI output without exporting any potentially secret text."""
     tail=text.lower()
-    if "unrecognized arguments" in tail or "no such option" in tail:
-        return "COLAB_CLI_ARGUMENT_ERROR"
-    if "authentication" in tail or "invalid_grant" in tail or "credentials" in tail:
-        return "COLAB_AUTH_ERROR"
-    if "quota" in tail or "resource_exhausted" in tail:
-        return "COLAB_QUOTA_ERROR"
-    if "failed to connect" in tail or "connection refused" in tail:
-        return "COLAB_CONNECT_ERROR"
-    if "not found" in tail or "no such file" in tail:
-        return "COLAB_COMMAND_OR_FILE_NOT_FOUND"
+    patterns=(
+        ("COLAB_CLI_SYNTAX_ERROR",("unrecognized arguments","no such option","unknown option",
+            "unexpected extra argument","invalid value for","usage: colab")),
+        ("COLAB_T4_NOT_AVAILABLE",("no gpu available","no available gpu",
+            "accelerator unavailable","gpu not available","no t4")),
+        ("COLAB_QUOTA_OR_ASSIGNMENT_REJECTED",("quota","resource_exhausted",
+            "too many assignments","assignment quota","code: 412","status 412",
+            "http 412","gpu usage limit")),
+        ("COLAB_AUTH_ERROR",("invalid_grant","invalid credentials","unauthenticated",
+            "authentication required","refresh token","expired token",
+            "application default credentials","permission denied","forbidden","403")),
+        ("COLAB_RUNTIME_ALLOCATION_FAILED",("failed to assign","assign failed",
+            "could not allocate","runtime allocation","cannot create session")),
+        ("COLAB_TRANSPORT_ERROR",("connection refused","failed to connect","unreachable",
+            "timed out","timeout","network error","dns")),
+        ("COLAB_REMOTE_SCRIPT_ERROR",("filenotfounderror","modulenotfounderror",
+            "syntaxerror","traceback (most recent call last)")),
+        ("COLAB_COMMAND_OR_FILE_NOT_FOUND",("not found","no such file")),
+    )
+    for code,needles in patterns:
+        if any(needle in tail for needle in needles):
+            return code
     return "COLAB_NO_VERIFIED_REMOTE_RECEIPT"
 
 def main():
@@ -63,6 +76,7 @@ def main():
     heartbeat_stop=threading.Event()
     heartbeat_thread=None
     print("PSYAI_GPU8_BRIDGE_STARTED",flush=True)
+    proof["script_revision"]=os.getenv("GITHUB_SHA","")[:12]
     try:
         # Do not launch an expensive cloud job unless independent progress
         # reporting is available. GitHub Actions logs may be inaccessible.
@@ -140,6 +154,13 @@ def main():
             proof["status"]="AMBIGUOUS_REMOTE_RECEIPTS"
         else:
             proof["status"]=classify_cli("\n".join(snippets))
+            proof["cli_diagnostics"]={
+                "output_lines_seen":sum(1 for x in snippets if x),
+                "output_tail_sha256":hashlib.sha256(
+                    "\n".join(snippets).encode("utf-8",errors="replace")
+                ).hexdigest()[:20],
+                "reason_class":proof["status"],
+            }
     except (OSError,ValueError,RuntimeError) as exc:
         if proof["status"]!="STATUS_JOURNAL_UNAVAILABLE":
             proof["status"]="COLAB_CLI_LAUNCH_FAILED"
