@@ -142,6 +142,7 @@ def bounded_receipt(log,original_sha,expected_src):
     # Block arbitrary free text: only numeric / known boolean fields.
     allowed={"schema","status","source_sha","source_private","source_published",
              "model_started","generation_verified","full_case34",
+              "partial_generation_observed",
              "target_seconds","vram_cap_mib","stages","case34_original_sha256_verified",
              "model_sha256_verified","e5_revision","nli_revision","result_receipt",
              "case34_status","full_analysis_seconds","analysis_seconds",
