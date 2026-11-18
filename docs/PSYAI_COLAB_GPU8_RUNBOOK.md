@@ -1,5 +1,20 @@
 # PsyAI → Colab: ЕДИНСТВЕННЫЙ порядок запуска (18.11.2026)
 
+## CASE34 — проверенный шаблон AVRORA, без нового Google Drive OAuth (18.11.2026)
+
+**ОБНОВЛЕНИЕ МАРШРУТА:** проанализирован реально действующий `.github/workflows/avrora-private-wave.yml` и `tools/run_private_wave_checkout.py`. «Аврора» берёт код/источник из PRIVATE GitHub checkout через существующий `AVRORA_WAVE_SOURCE_DEPLOY_KEY` и использует `AVRORA_COLAB_ADC_JSON_B64` ТОЛЬКО для доступа к Colab. Google Drive для входного файла в этом пути не используется. Предыдущая попытка открыть Drive из Colab была лишней; не повторять.
+
+**Для PsyAI уже подготовлены:** существующий приватный checkout `PSYAI_SOURCE_DEPLOY_KEY` (подтверждено run 44247014426); проверенная модель `44244184390` SUCCESS; приватный файл `tools/case34_private_secret_preflight.py` + регрессионные тесты `tests/test_case34_private_secret_preflight.py`; отдельный подготовленный мануальный `.github/workflows/psyai-case34-private-source-gate.yml` (без GPU). Последний pinned-private source SHA `ecd19958919541d5985a86c66152c0b880ac0c82`, public workflow SHA `8e38c22ed564c6d31b0cd5e2e390e21f912007bd`.
+
+**Одна недостающая операция владельца:** положить исходные байты **в GitHub Actions encrypted secret**, а не в git-историю или Google Drive OAuth: `PSYAI_CASE34_SOURCE_B64` в репозитории `vicrex/avrora-colab-launcher`. Уже подготовлен приватный PowerShell installer `vicrex/PSYAI_PROFESSIONAL` → `tools/install_case34_source_secret.ps1` (SHA-256 оригинала до передачи, GitHub CLI owner check, секрет через stdin, не через argv или git). Требует `gh` и локально доступный оригинальный CASE34; никакой новый Google доступ и сборка EXE не требуются. Прозрачная граница доверия: пользователи с правом редактировать Actions этого репозитория потенциально могут получить доступ к секретам; после завершения полного CASE34 владелец удаляет секрет командой скрипта `-DeleteAfterCompletedCase34`.
+
+**Точный порядок:** 1) проверить исходный SHA-256 и 34 роли локально; 2) **одна** установка encrypted secret владельцем; 3) **один** `workflow_dispatch` существующего `PsyAI CASE34 secure source readiness (NO GPU)`, никаких `push` автозапусков; 4) проверить `source_verified=true`, `turns=34`, `source_published=false`, receipt digest и отчет без диалога; 5) **только после этого** подготавливать/исполнять отдельный реальный Linux E2E Gemma + E5 + graph + NLI/V2 + PDF/DOCX; 6) после успешной приёмки удалить временный secret. **GPU smoke не повторять**.
+
+**ТЕКУЩИЙ ЧЕСТНЫЙ СТАТУС:** `GPU8_VERIFIED_SUCCESS`, `CASE34_ORIGINAL_SHA_LOCAL_PASS`, `PRIVATE_SOURCE_SECRET_NOT_INSTALLED_OR_NOT_VERIFIED`, `FULL_CASE34_NOT_STARTED`. Код preflight/доставка подготовлен, но secret НЕ установлен через доступные инструменты и запуск CASE34 не сделан. Нельзя выдавать изменения в git за запуск Gemma.
+
+**Не использовать устаревший отдельный `drive.readonly` OAuth путь**, не запрашивать новую авторизацию Google; он остался альтернативным исследованием и НЕ требуется по схеме AVRORA. Никогда не передавать реальный исходник в публичные git-файлы, URL, stdout/stderr, Actions artifacts или отчёты.
+
+
 ## CASE34 PRIVATE SOURCE READINESS — verified scope blocker
 
 **Не переизобретать проверку и не запускать модель:** отдельный read-only, NO-GPU workflow уже реализован — `.github/workflows/psyai-case34-private-source-gate.yml`, а приватный helper — `vicrex/PSYAI_PROFESSIONAL` → `tools/case34_private_drive_preflight.py`. Источники в публичный launcher/артефакты не передаются.
