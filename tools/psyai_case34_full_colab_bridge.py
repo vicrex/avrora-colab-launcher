@@ -201,7 +201,9 @@ def main():
                     if variant=="T4" and reason=="COLAB_GPU_ASSIGNMENT_REJECTED":
                         print("CASE34_T4_REFUSED_TRY_L4_ONCE",flush=True)
                         continue
-                    if reason!="OTHER_FAILURE":raise ValueError(reason)
+                    if reason!="OTHER_FAILURE":
+                        proof=blocked(reason)
+                        break
                 proof=bounded_receipt(log,ORIGINAL_SHA,src_sha)
                 proof["colab_exit_code"]=returncode
                 proof["gpu_variant"]=variant
