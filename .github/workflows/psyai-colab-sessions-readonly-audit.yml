@@ -1,0 +1,87 @@
+name: PsyAI Colab read-only existing assignments audit (NO GPU allocation)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/psyai-colab-sessions-readonly-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-colab-sessions-readonly-audit
+  cancel-in-progress: false
+
+jobs:
+  session-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Set up existing Colab ADC without new auth
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python -B tools/write_adc.py
+      - name: Install pinned CLI used in successful AVRORA and PsyAI runs
+        run: python -m pip -q install --disable-pip-version-check 'google-colab-cli==0.7.4'
+      - name: Read ONLY server-side assignments (no new GPU runtime)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B - <<'PY'
+          import subprocess,re,hashlib,json,pathlib
+          cmd=['colab','--auth=adc','sessions']
+          r=subprocess.run(cmd,capture_output=True,text=True,timeout=90)
+          raw=r.stdout+'\n'+r.stderr
+          assignments=[s for s in r.stdout.splitlines() if 'Hardware:' in s and 'Variant:' in s]
+          report={
+            'schema':'PSYAI_COLAB_ASSIGNMENT_INVENTORY_V1',
+            'status':'PASS' if r.returncode==0 else 'BLOCKED',
+            'cli_exit_code':r.returncode,
+            'active_server_assignments':len(assignments) if r.returncode==0 else None,
+            'active_t4_assignments':sum('Hardware: T4' in s for s in assignments) if r.returncode==0 else None,
+            'active_gpu_assignments':sum('Variant: GPU' in s for s in assignments) if r.returncode==0 else None,
+            'untracked_server_assignments':sum(s.lstrip().startswith('[?]') for s in assignments) if r.returncode==0 else None,
+            'allocation_attempted':False,
+            'gpu_allocated':False,
+            'patient_data_used':False,
+          }
+          if r.returncode:
+            body=raw.lower()
+            report['reason_code']=(
+              'CREDENTIAL_REJECTED' if re.search('unauthorized|invalid.grant|401|403',body)
+              else 'SESSION_LIST_REMOTE_FAILURE')
+          else:
+            report['reason_code']='SERVER_ASSIGNMENTS_LISTED'
+          canonical=json.dumps(report,sort_keys=True,separators=(',',':'),ensure_ascii=True)
+          report['receipt_sha256']=hashlib.sha256(canonical.encode('ascii')).hexdigest()
+          pathlib.Path('psyai_colab_sessions_safe.json').write_text(
+              json.dumps(report,sort_keys=True,separators=(',',':'),ensure_ascii=True)+'\n',encoding='ascii')
+          print('COLAB_SESSIONS_STATUS='+report['status'])
+          print('ACTIVE_ASSIGNMENTS='+str(report['active_server_assignments']))
+          print('ACTIVE_T4='+str(report['active_t4_assignments']))
+          print('UNTRACKED_ASSIGNMENTS='+str(report['untracked_server_assignments']))
+          raise SystemExit(0 if r.returncode==0 else 2)
+          PY
+      - name: Publish sanitized server assignment counts only
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-colab-server-sessions-${{ github.run_id }}
+          path: psyai_colab_sessions_safe.json
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Remove ADC and temporary evidence
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then rm -f "$GOOGLE_APPLICATION_CREDENTIALS"; fi
+          rm -f psyai_colab_sessions_safe.json
+          echo 'COLAB_SESSION_INVENTORY_CLEANUP_PASS'
