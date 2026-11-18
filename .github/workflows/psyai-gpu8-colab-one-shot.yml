@@ -1,0 +1,104 @@
+name: PsyAI Gemma 4 12B T4 GPU 8GiB one-shot preflight
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/psyai-gpu8-colab-one-shot.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-colab-cpu-global-nonparallel
+  cancel-in-progress: false
+
+jobs:
+  psyai-gpu8-colab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    steps:
+      - name: Checkout launcher, no persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate GPU8 isolated runner (no model yet)
+        run: |
+          python -m py_compile tools/psyai_case34_gpu8_colab_probe.py
+          python - <<'PY'
+          import importlib.util
+          p="tools/psyai_case34_gpu8_colab_probe.py"
+          spec=importlib.util.spec_from_file_location("gpu8",p)
+          module=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          assert module.CAP_MIB==8192
+          assert module.MODEL_SHA=="93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b"
+          assert module.MARKER=="PSYAI_GPU8_COLAB_RECEIPT="
+          print("PASS_GPU8_RUNNER_STATIC_GUARD")
+          PY
+      - name: Require existing AVRORA Google Colab ADC; do not reauthorize
+        env:
+          ADC_PRESENT: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+        run: |
+          if [ "$ADC_PRESENT" != "true" ]; then
+            echo "BLOCKED_EXISTING_GOOGLE_COLAB_ADC_NOT_CONFIGURED"
+            exit 2
+          fi
+      - name: Recover existing credentials to temporary runner file
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python tools/write_adc.py
+      - name: Reuse exactly the existing AVRORA CLI (no browser)
+        run: python -m pip install -q --disable-pip-version-check 'google-colab-cli==0.7.4'
+      - name: Start ephemeral T4 GPU and Gemma under reserved 8GiB
+        shell: bash
+        run: |
+          set +e
+          colab --auth=adc run --gpu T4 tools/psyai_case34_gpu8_colab_probe.py > psyai_gpu8_remote.log 2>&1
+          rc=$?
+          export COLAB_RETURN_CODE="$rc"
+          python - <<'PY'
+          import hashlib,json,os,pathlib,sys
+          log=pathlib.Path("psyai_gpu8_remote.log")
+          lines=log.read_text(encoding="utf-8",errors="replace").splitlines() if log.exists() else []
+          prefix="PSYAI_GPU8_COLAB_RECEIPT="
+          receipts=[x.split(prefix,1)[1] for x in lines if prefix in x]
+          proof={"schema":"PSYAI_GPU8_COLAB_BRIDGE_V1","status":"BLOCKED_NO_VALID_REMOTE_RECEIPT",
+                 "gpu":"T4","vram_cap_mib":8192,"case34_full_e2e":False,
+                 "github_run_id":os.getenv("GITHUB_RUN_ID",""),
+                 "colab_exit_code":os.getenv("COLAB_RETURN_CODE","")}
+          if len(receipts)==1:
+            try:
+              report=json.loads(receipts[0])
+              reported=report.pop("receipt_sha256",None)
+              calc=hashlib.sha256(json.dumps(report,sort_keys=True,separators=(",",":"),ensure_ascii=True).encode()).hexdigest()
+              if reported!=calc or report.get("schema")!="PSYAI_GPU8_COLAB_PREFLIGHT_V1":
+                raise ValueError("INVALID_RECEIPT")
+              report["receipt_sha256"]=reported
+              proof.update(status=report["status"],remote=report)
+            except (ValueError,KeyError,TypeError):
+              pass
+          pathlib.Path("psyai_gpu8_proof.json").write_text(json.dumps(proof,indent=2,ensure_ascii=True)+"\n")
+          print("PSYAI_GPU8_STATUS="+proof["status"])
+          sys.exit(0 if proof["status"]=="GPU8_MODEL_PREFLIGHT_PASS" else 2)
+          PY
+      - name: Persist only sanitized GPU evidence, never remote logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-gpu8-colab-${{ github.run_id }}
+          path: psyai_gpu8_proof.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Erase auth and logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-\}" ]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
+          rm -f psyai_gpu8_remote.log
