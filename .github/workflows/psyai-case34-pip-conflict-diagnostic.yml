@@ -72,8 +72,8 @@ jobs:
           with tempfile.TemporaryDirectory() as tmp:
             r=pathlib.Path(tmp)/"semantic-colab-compat.txt"
             r.write_text(adjusted,encoding="utf-8")
-            fix=[x for x in orig if x!="requirements-semantic.txt"]
-            fix[fix.index("requirements.txt")+1:fix.index("requirements.txt")+1]=["-r",str(r)]
+            fix=list(orig)
+            fix[fix.index("requirements-semantic.txt")]=str(r)
             corrected_rc,raw_fix=check(fix)
           print("COLAB_PINNED_0221_DRY_RUN_EXIT="+str(corrected_rc))
           print("COLAB_CORRECTED_RESOLVER_PASS="+str(corrected_rc==0).lower())
