@@ -1,58 +1,59 @@
 name: PsyAI CASE34 secure source readiness (NO GPU)
 
 on:
-  # Explicit owner action ONLY, no extra costs before OAuth consent.
+  # Manually run ONLY after owner installed encrypted source using the existing
+  # authenticated 'gh' from their trusted Windows PC.
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: psyai-case34-source-readonly-preflight
+  group: psyai-case34-source-private-secret-readiness
   cancel-in-progress: false
 
 jobs:
-  private-case34-readonly:
+  private-case34-secret:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 10
     env:
-      HAS_PSYAI_SOURCE_KEY: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
-      HAS_CASE34_READONLY_ADC: ${{ secrets.PSYAI_CASE34_DRIVE_READONLY_ADC_B64 != '' }}
+      HAS_PSYAI_SOURCE_DEPLOY_KEY: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
       HAS_COLAB_ADC: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+      HAS_CASE34_SOURCE_SECRET: ${{ secrets.PSYAI_CASE34_SOURCE_B64 != '' }}
     steps:
-      - name: Public launcher checkout (only workflow and static tests)
+      - name: Public launcher checkout without persisted authentication
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Configure Python without launching Colab or Gemma
+      - name: Configure isolated Python without Colab or Gemma
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Fail closed if an already-existing prerequisite is absent
+      - name: Verify EXISTING access references and fail before any download
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$HAS_PSYAI_SOURCE_KEY" != "true" ]; then
-            echo "BLOCKED_EXISTING_PSYAI_PRIVATE_DEPLOY_KEY_NOT_PRESENT"
-            exit 2
-          fi
-          if [ "$HAS_CASE34_READONLY_ADC" != "true" ]; then
-            echo "BLOCKED_PSYAI_CASE34_READONLY_DRIVE_CONSENT_REQUIRED"
+          if [ "$HAS_PSYAI_SOURCE_DEPLOY_KEY" != "true" ]; then
+            echo "BLOCKED_EXISTING_PSYAI_SOURCE_DEPLOY_KEY_ABSENT"
             exit 2
           fi
           if [ "$HAS_COLAB_ADC" != "true" ]; then
-            echo "BLOCKED_EXISTING_COLAB_ADC_NOT_PRESENT"
+            echo "BLOCKED_EXISTING_AVRORA_COLAB_ACCESS_ABSENT"
             exit 2
           fi
-          echo "PASS_EXISTING_PSYAI_SOURCE_COLAB_AND_CASE34_READONLY_CREDENTIALS"
+          if [ "$HAS_CASE34_SOURCE_SECRET" != "true" ]; then
+            echo "BLOCKED_OWNER_MUST_SET_PSYAI_CASE34_SOURCE_B64"
+            exit 2
+          fi
+          echo "PASS_EXISTING_PRIVATE_SOURCE_AND_COLAB_ACCESS_AND_ENCRYPTED_CASE34"
 
-      - name: Checkout PINNED private PsyAI source for read-only preflight
+      - name: Checkout pinned PRIVATE PsyAI source via existing deploy key
         uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: 5a7a8f50759e4d4ad23da4ac0f5ea9ada6f53729
+          ref: c630920b8d39b25e3a2d399913b5f39f38faeeb1
           path: private_psyai
           fetch-depth: 1
           persist-credentials: false
@@ -60,49 +61,49 @@ jobs:
           ssh-strict: true
           ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
 
-      - name: Validate original-source preflight code and safety without file
+      - name: Offline synthetic SHA/roles/safety tests (NO real dialogue used)
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C private_psyai rev-parse HEAD)" = "5a7a8f50759e4d4ad23da4ac0f5ea9ada6f53729"
+          test "$(git -C private_psyai rev-parse HEAD)" = "c630920b8d39b25e3a2d399913b5f39f38faeeb1"
           python -B - <<'PY'
-          import pathlib
-          path=pathlib.Path('private_psyai/tools/case34_private_drive_preflight.py')
-          source=path.read_bytes()
-          compile(source,'private_preflight.py','exec')
-          assert b'CASE34_PRIVATE_SOURCE_VERIFIED' in source
-          assert b'https://www.googleapis.com/auth/drive.readonly' in source
-          assert b'PRIVATE_DRIVE_GRANTED_SCOPE_NOT_READONLY' in source
-          assert b'os.open(temp,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)' in source
-          print('PASS_PRIVATE_SOURCE_PREFLIGHT_STATIC_NO_GPU')
+          from pathlib import Path
+          f=Path("private_psyai/tools/case34_private_secret_preflight.py")
+          compile(f.read_bytes(),str(f),"exec")
+          s=f.read_text()
+          assert 'PSYAI_CASE34_SOURCE_B64' in s
+          assert 'SHA_OR_SIZE_MISMATCH' in s
+          assert 'source_published' in s
+          assert 'github_encrypted_source_present' in s
+          print("PASS_PRIVATE_CASE34_SOURCE_PREFLIGHT_STATIC")
           PY
+          python -m pip -q install 'pytest>=8,<10'
+          cd private_psyai
+          python -B -m pytest tests/test_case34_private_secret_preflight.py -q -p no:cacheprovider
 
-      - name: Install minimal preflight-only Google auth dependencies
-        run: python -m pip install -q --disable-pip-version-check 'google-auth==2.35.0' 'requests==2.32.3'
-
-      - name: Verify original private Drive bytes and roles WITHOUT upload
+      - name: Verify original CASE34 secret bytes SHA, 34 turns and author roles
         shell: bash
         env:
-          # EXACTLY read-only scope. Never use trading / Colab / full-Drive
-          # credentials for a patient's consultation source.
-          PSYAI_CASE34_PRIVATE_DRIVE_ADC_B64: ${{ secrets.PSYAI_CASE34_DRIVE_READONLY_ADC_B64 }}
+          PSYAI_CASE34_SOURCE_B64: ${{ secrets.PSYAI_CASE34_SOURCE_B64 }}
         run: |
           set +x
-          python -B private_psyai/tools/case34_private_drive_preflight.py --receipt case34-source-preflight.json
+          export PYTHONDONTWRITEBYTECODE=1
+          python -B private_psyai/tools/case34_private_secret_preflight.py \
+            --receipt psyai-case34-private-source-proof.json
 
-      - name: Publish ONLY aggregate readiness proof, never dialogue or tokens
+      - name: Publish only sanitized original-source SHA-bound readiness receipt
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: psyai-case34-readonly-gate-${{ github.run_id }}
-          path: case34-source-preflight.json
+          name: psyai-case34-private-source-gate-${{ github.run_id }}
+          path: psyai-case34-private-source-proof.json
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 3
 
-      - name: Destroy the private checkout and any temporary preflight result
+      - name: Destroy private checkout; no original transcript on filesystem
         if: ${{ always() }}
         shell: bash
         run: |
           rm -rf private_psyai
-          rm -f case34-source-preflight.json
-          echo "CLEANUP_PRIVATE_CASE34_SOURCE_GATE_COMPLETE"
+          rm -f psyai-case34-private-source-proof.json
+          echo "PASS_EPHEMERAL_SOURCE_GATE_CLEANUP"
