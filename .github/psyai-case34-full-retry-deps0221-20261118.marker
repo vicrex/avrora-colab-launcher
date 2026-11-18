@@ -1,0 +1,8 @@
+ONE_PSYAI_CASE34_FULL_RETRY
+previous_run=44261669852
+root_cause=transformers_4_57_1_vs_tokenizers_0_23_3
+verified_no_gpu_pip_run=44263605840:SUCCESS
+colab_compatible_tokenizers_pin=0.22.1
+remote_fix_commit=63cd8d61db2e31eb4ea359711866c7aa68ecd696
+workflow_check_commit=36798561b47604fb9b02459b76018fb62f278d17
+repeat_only_after_specific_fix=true
