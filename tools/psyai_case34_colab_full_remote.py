@@ -275,8 +275,13 @@ def main():
             total,used,free=gpu.gpu_memory()
             if total<CAP_MIB+1024:raise RuntimeError("GPU_TOTAL_TOO_SMALL")
             import torch
-            if not torch.cuda.is_available() or "T4" not in torch.cuda.get_device_name(0):
-                raise RuntimeError("GPU_NOT_TESLA_T4")
+            # The CLI supports T4 and L4. Retain the exact same 8192 MiB
+            # budget on either GPU; this is NOT a higher-VRAM model profile.
+            if not torch.cuda.is_available():
+                raise RuntimeError("CUDA_DEVICE_NOT_AVAILABLE")
+            detected=torch.cuda.get_device_name(0).upper()
+            if not ("T4" in detected or "L4" in detected):
+                raise RuntimeError("GPU_NOT_ALLOWED_T4_OR_L4")
             free=gpu.gpu_memory()[2]
             reserve=max(0,free-CAP_MIB+128)
             guard=torch.empty(reserve*MIB,dtype=torch.uint8,device="cuda")
