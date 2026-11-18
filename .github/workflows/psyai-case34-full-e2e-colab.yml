@@ -1,0 +1,102 @@
+name: PsyAI CASE34 real full E2E — one private Colab T4 run
+
+on:
+  workflow_dispatch:
+  # One immutable human-approved source-state marker: no code-edit auto-retry.
+  push:
+    branches: [main]
+    paths:
+      - '.github/psyai-case34-full-once-20261118.marker'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-colab-cpu-global-nonparallel
+  cancel-in-progress: false
+
+jobs:
+  psyai-real-case34:
+    runs-on: ubuntu-latest
+    timeout-minutes: 82
+    env:
+      HAS_PSYAI_SOURCE: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
+      HAS_CASE34_ORIGINAL: ${{ secrets.PSYAI_CASE34_SOURCE_B64 != '' }}
+      HAS_COLAB_ACCESS: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
+      PSYAI_CASE34_PINNED_PRIVATE_SHA: d9d69f3b9c55342f74e6d17d041ebec1376b64fb
+    steps:
+      - name: Checkout public launcher without persisted GitHub credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Do not spend Colab time if previous private source validation unavailable
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$HAS_PSYAI_SOURCE" = 'true' || { echo 'BLOCKED_EXISTING_PSYAI_DEPLOY_KEY'; exit 2; }
+          test "$HAS_CASE34_ORIGINAL" = 'true' || { echo 'BLOCKED_ORIGINAL_CASE34_SECRET'; exit 2; }
+          test "$HAS_COLAB_ACCESS" = 'true' || { echo 'BLOCKED_EXISTING_AVRORA_COLAB_ADC'; exit 2; }
+          echo 'PASS_ALL_EXISTING_ACCESS_REFERENCES_READY_NO_NEW_OAUTH'
+
+      - name: Checkout exact private PsyAI CASE34 branch commit by existing SSH deploy key
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: d9d69f3b9c55342f74e6d17d041ebec1376b64fb
+          path: private_psyai
+          fetch-depth: 1
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+
+      - name: Last zero-GPU source and syntax guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C private_psyai rev-parse HEAD)" = "d9d69f3b9c55342f74e6d17d041ebec1376b64fb"
+          python -B tools/test_psyai_case34_colab_full_preflight.py
+          echo 'PASS_REAL_CASE34_REMOTE_CODE_AND_PIN_STATIC'
+
+      - name: Reuse already authorized AVRORA Colab ADC, NEVER browser authorization
+        env:
+          AVRORA_COLAB_ADC_JSON_B64: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 }}
+        run: python -B tools/write_adc.py
+
+      - name: Install exactly verified existing Colab CLI v0.7.4
+        shell: bash
+        run: python -m pip -q install --disable-pip-version-check 'google-colab-cli==0.7.4'
+
+      - name: ONE actual Gemma E5 NLI V2 CASE34 deep analysis and PDF DOCX
+        shell: bash
+        timeout-minutes: 60
+        env:
+          PSYAI_CASE34_SOURCE_B64: ${{ secrets.PSYAI_CASE34_SOURCE_B64 }}
+        run: |
+          set +x
+          python -u tools/psyai_case34_full_colab_bridge.py
+
+      - name: Publish ONLY sanitized remote SHA-bound source/quality/time receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: psyai-case34-full-safe-proof-${{ github.run_id }}
+          path: psyai_case34_full_proof.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Clean ADC, private checkout, generated logs and evidence
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi
+          rm -rf private_psyai
+          rm -f psyai_case34_full_proof.json
+          echo 'PASS_PSYAI_CASE34_GH_RUNNER_CLEANUP'
