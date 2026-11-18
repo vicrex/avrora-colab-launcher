@@ -55,22 +55,25 @@ jobs:
         run: python tools/write_adc.py
       - name: Reuse exactly the existing AVRORA CLI (no browser)
         run: python -m pip install -q --disable-pip-version-check 'google-colab-cli==0.7.4'
-      - name: Preflight Colab CLI GPU run syntax without allocating any runtime
+      - name: Verify installed Colab CLI v0.7.4 exposes GPU and timeout options
         shell: bash
         run: |
           python - <<'PY'
-          import subprocess,sys
+          import importlib.metadata,inspect,sys
           try:
-              p=subprocess.run(["colab","--auth=adc","run","--help"],
-                               stdin=subprocess.DEVNULL,capture_output=True,
-                               text=True,timeout=40,check=False)
-          except (OSError,subprocess.TimeoutExpired):
-              print("COLAB_CLI_HELP_FAILED")
+              version=importlib.metadata.version("google-colab-cli")
+              from colab_cli.commands.run import run_command
+              options=inspect.signature(run_command).parameters
+          except (ImportError,ValueError) as exc:
+              print("COLAB_CLI_IMPORT_OR_METADATA_ERROR:"+type(exc).__name__)
               sys.exit(2)
-          if p.returncode or "--gpu" not in p.stdout or "--gpu" not in (p.stdout+p.stderr):
-              print("COLAB_CLI_GPU_FLAG_UNAVAILABLE")
+          if version!="0.7.4" or "gpu" not in options or "timeout" not in options:
+              print("COLAB_CLI_GPU_TIMEOUT_OPTIONS_UNAVAILABLE")
               sys.exit(2)
-          print("COLAB_CLI_GPU_FLAG_VERIFIED")
+          if options["timeout"].default!=30.0:
+              print("COLAB_CLI_DEFAULT_TIMEOUT_CHANGED")
+              sys.exit(2)
+          print("PASS_COLAB_CLI_0_7_4_GPU_TIMEOUT_VERIFIED")
           PY
       - name: Run bounded Colab CLI with independent commit-status heartbeat
         shell: bash
