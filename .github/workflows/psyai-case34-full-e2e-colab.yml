@@ -10,6 +10,7 @@ on:
       - '.github/psyai-case34-full-retry-cli312-20261118.marker'
       - '.github/psyai-case34-full-retry-deps0221-20261118.marker'
       - '.github/psyai-case34-full-early-receipt-20261118.marker'
+      - '.github/psyai-case34-full-retry-rootpath-20261118.marker'
 
 permissions:
   contents: read
@@ -26,7 +27,7 @@ jobs:
       HAS_PSYAI_SOURCE: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
       HAS_CASE34_ORIGINAL: ${{ secrets.PSYAI_CASE34_SOURCE_B64 != '' }}
       HAS_COLAB_ACCESS: ${{ secrets.AVRORA_COLAB_ADC_JSON_B64 != '' }}
-      PSYAI_CASE34_PINNED_PRIVATE_SHA: 758535720cbefb5e6ae4968fe7250661b02e92b2
+      PSYAI_CASE34_PINNED_PRIVATE_SHA: 0e58842febb0808032df61834aa02ead60e0602b
     steps:
       - name: Checkout public launcher without persisted GitHub credentials
         uses: actions/checkout@v4
@@ -50,7 +51,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: 758535720cbefb5e6ae4968fe7250661b02e92b2
+          ref: 0e58842febb0808032df61834aa02ead60e0602b
           path: private_psyai
           fetch-depth: 1
           persist-credentials: false
@@ -62,7 +63,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C private_psyai rev-parse HEAD)" = "758535720cbefb5e6ae4968fe7250661b02e92b2"
+          test "$(git -C private_psyai rev-parse HEAD)" = "0e58842febb0808032df61834aa02ead60e0602b"
           python -B tools/test_psyai_case34_colab_full_preflight.py
           echo 'PASS_REAL_CASE34_REMOTE_CODE_AND_PIN_STATIC'
 
