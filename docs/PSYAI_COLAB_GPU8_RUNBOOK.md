@@ -103,3 +103,19 @@
 **Следующий рациональный способ (ещё НЕ реализован и НЕ запущен):** использовать тот же SHA-pinned готовый `llama-server` из релиза `b11774`, localhost `127.0.0.1`, запрос `POST /v1/chat/completions` с коротким **синтетическим** промптом; проверять **JSON** `choices[].message.content` и `usage.completion_tokens` отдельно от stderr/stdout сервера. Официальная документация: https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md . Сервер — тот же тип runtime, который использует PsyAI. Перед выделением GPU тестировать парсер JSON и таймауты **без модели**; только после проверенного patch+difference, отдельного подтверждения отсутствия текущего run и одноразовой принятой командной процедуры допустим следующий холодный тест.
 
 **Границы:** отдельный `CASE34_FULL_E2E` сейчас `NOT_STARTED`; модельная canary-проверка и PDF/DOCX не проведены. Приватный оригинал остаётся в закрытом Drive. Установленный ADC Colab не обеспечивает Drive scope; не нарушать эту границу.
+
+
+## 10. Серверный JSON-прогон: зафиксированный протокол
+
+**Реально запущен контрольный run [44244184390](https://github.com/vicrex/avrora-colab-launcher/actions/runs/44244184390) по атомарному коммиту `57d3ac98d7916b573bcaa30d970840bf9b37746d`.** Он использует уже существующий `AVRORA_COLAB_ADC_JSON_B64` и `google-colab-cli==0.7.4`. На момент записи этого пункта результат **PENDING**, а не PASS.
+
+Проверка выполняется из действующего workflow `.github/workflows/psyai-gpu8-colab-one-shot.yml` и `tools/psyai_case34_gpu8_colab_probe.py`: Colab T4 → резерв VRAM ≤8192 МиБ → SHA-256 pinned Gemma GGUF → два официальных SHA-проверенных CUDA-архива `llama.cpp b11774` → локальный `llama-server` на `127.0.0.1:<случайный свободный порт>` → готовность `/health` → `GET /v1/models` → **`POST /v1/chat/completions`**, `stream=false`, `temperature=0`, `max_tokens=96`, `reasoning_effort=none`, `chat_template_kwargs.enable_thinking=false`. Контрольный вопрос синтетический, не содержит ожидаемого ответа. Отдельно проверяются поле `choices[0].message.content`, `usage.completion_tokens>0`, правильный ответ (`lighthouse`/«маяк»), пик процесса ≤8192 МиБ. Никакие сырые ответы, токены доступа или данные консультаций не публикуются.
+
+**Критерии принятия:**
+1. GitHub `status=completed`, `conclusion=success`; все необходимые стадии (включая `server_ready`, `gpu8_inference`) `PASS`.
+2. Получен один `PSYAI_GPU8_COLAB_RECEIPT` с корректным SHA-256, `status=GPU8_MODEL_PREFLIGHT_PASS`, `generation_verified=true`, измерены `completion_tokens>0`, пик GPU ≤8192 МиБ. Совпадение слова в логах и код процесса 0 **не являются** доказательством.
+3. Artifact `psyai-gpu8-colab-<run_id>` проверен; сопоставлены commit SHA, времена и результат. При провале записать конкретный `failure_code`, не называть PASS и **не повторять запуск без адресного исправления**.
+4. Если всё прошло, закрепить здесь точные `run_id`, полный commit SHA, digest receipt, параметры CLI/server, модель/ревизию/SHA, CUDA версии/дижесты, VRAM, времена, ссылки на реальный artifact; пометить этот маршрут **VERIFIED_GPU8_SERVER_BASELINE**. Ту же ссылку и статус внести в приватный `vicrex/PSYAI_PROFESSIONAL` → `AGENTS.md` и `docs/PSYAI_COLAB_STATUS_20261118.md`. Обе записи сверить чтением из GitHub после коммита.
+5. После такого PASS новые проверки GPU запускаются **только при изменении модели, бинарников, ресурсов или серверного кода**. Полный CASE34 остаётся отдельной приватной проверкой: не выдавать GPU canary за E2E анализа.
+
+**Автозапуск:** правки `tools/psyai_case34_gpu8_colab_probe.py`, `tools/psyai_gpu8_colab_bridge.py`, `tools/psyai_gpu8_status.py` или самого workflow запускают новый Colab-run через GitHub `push`; **документы `docs/` и `AGENTS.md` не запускают GPU**. Во время текущего запуска менять только документы.
