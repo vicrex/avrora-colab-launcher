@@ -1,9 +1,13 @@
 name: PsyAI CASE34 secure source readiness (NO GPU)
 
 on:
-  # Manually run ONLY after owner installed encrypted source using the existing
-  # authenticated 'gh' from their trusted Windows PC.
   workflow_dispatch:
+  # One explicit, non-repeatable source-gate start marker. Keep workflow code
+  # edits from auto-triggering; no model/GPU actions are included here.
+  push:
+    branches: [main]
+    paths:
+      - '.github/case34-source-gate-kickoff-20261118.once'
 
 permissions:
   contents: read
