@@ -14,6 +14,8 @@ import subprocess
 import sys
 import tarfile
 import urllib.request
+import re
+import unicodedata
 import tempfile
 import time
 
@@ -106,6 +108,30 @@ def download_pinned_asset(root:Path,filename:str,expected_sha:str,label:str)->Pa
         partial.unlink(missing_ok=True)
         progress(label,"FAIL",time.monotonic()-started,reason_code="CUDA_ASSET_VERIFICATION_FAILED")
         raise RuntimeError("CUDA_ASSET_VERIFICATION_FAILED") from None
+
+
+
+def recognize_generated_canary(raw:bytes)->tuple[bool,dict]:
+    """Recognize legitimate RU or EN lighthouse answers, not exit code alone.
+
+    No model stdout, prompts, or answer text are returned or logged. A valid
+    CLI exit code with only performance logs is NOT evidence of generation.
+    """
+    decoded=raw.decode("utf-8",errors="replace")
+    normalized=unicodedata.normalize("NFKD",decoded).casefold()
+    normalized="".join(c for c in normalized if unicodedata.category(c)!="Mn")
+    normalized=re.sub(r"\\x1b\\[[0-9;]*[A-Za-z]","",normalized)
+    ru=bool(re.search(r"(?<![а-яё])маяк(?:а|у|ом|е|и|ов|ам|ами|ах)?(?![а-яё])",normalized))
+    en=bool(re.search(r"(?<![a-z])(?:lighthouses?|beacons?)(?![a-z])",normalized))
+    metadata={
+        "stdout_bytes":len(raw),
+        "stdout_nonspace_chars":sum(not c.isspace() for c in decoded),
+        "output_sha256_prefix":hashlib.sha256(raw).hexdigest()[:20],
+        "has_llama_timing":bool(re.search(r"(?:llama_perf|eval time|prompt eval time)",normalized)),
+        "canary_ru":ru,
+        "canary_en":en,
+    }
+    return bool(raw.strip()) and (ru or en),metadata
 
 
 def gpu_memory():
@@ -244,8 +270,10 @@ def main():
                 if over:raise RuntimeError("GPU8_WATCHDOG_LIMIT_EXCEEDED")
                 if timed_out:raise RuntimeError("LLAMA_INFERENCE_TIMEOUT")
                 if proc.returncode:raise RuntimeError("LLAMA_GENERATION_NONZERO_EXIT")
-                if b""==output or "маяк" not in output.decode("utf8",errors="replace").lower():
-                    raise RuntimeError("NO_GENERATED_CANARY")
+                canary,summary=recognize_generated_canary(output)
+                receipt["inference_output_probe"]=summary
+                if not canary:
+                    raise RuntimeError("NO_RECOGNIZED_GENERATED_CANARY")
                 if peak==0:raise RuntimeError("GPU_ALLOCATIONS_NOT_CONFIRMED")
                 receipt["generation_verified"]=True
                 receipt["inference_seconds"]=round(time.monotonic()-inference_started,2)
