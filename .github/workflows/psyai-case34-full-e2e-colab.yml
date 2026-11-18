@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - '.github/psyai-case34-full-once-20261118.marker'
+      - '.github/psyai-case34-full-retry-cli312-20261118.marker'
 
 permissions:
   contents: read
@@ -32,7 +33,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Do not spend Colab time if previous private source validation unavailable
         shell: bash
