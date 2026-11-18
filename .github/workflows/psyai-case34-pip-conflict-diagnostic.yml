@@ -1,0 +1,89 @@
+name: PsyAI CASE34 Python dependencies root cause (NO GPU)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/psyai-case34-pip-conflict-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-case34-pip-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  pip-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HAS_SOURCE_KEY: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require existing private code
+        run: |
+          if [ "$HAS_SOURCE_KEY" != 'true' ]; then echo 'BLOCKED_SOURCE_KEY'; exit 2; fi
+      - uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: d9d69f3b9c55342f74e6d17d041ebec1376b64fb
+          path: private_psyai
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+      - name: Prove original pip conflict and corrected dependency set without installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd private_psyai
+          python - <<'PY'
+          import subprocess,sys,pathlib,re
+          req=pathlib.Path("requirements-semantic.txt").read_text(encoding="utf-8")
+          assert "tokenizers==0.23.3" in req
+          orig=[sys.executable,"-m","pip","install","-q","--dry-run","--no-cache-dir",
+                "--disable-pip-version-check","-r","requirements.txt",
+                "-r","requirements-semantic.txt",
+                "psutil>=5.9,<8","transformers==4.57.1",
+                "sentencepiece==0.2.1","huggingface_hub>=0.32,<1"]
+          def check(args):
+            r=subprocess.run(args,capture_output=True,text=True,timeout=250)
+            raw=(r.stdout+"\n"+r.stderr).lower()
+            return r.returncode,raw
+          original_rc,raw=check(orig)
+          print("ORIGINAL_PIP_EXIT="+str(original_rc))
+          print("ORIGINAL_TOKENIZERS_TRANSFORMERS_CONFLICT="+str(
+              ("tokenizers" in raw and "transformers" in raw and
+               ("resolutionimpossible" in raw or "conflicting dependencies" in raw or
+                "cannot install" in raw))).lower())
+          if original_rc==0: raise SystemExit("UNEXPECTED_ORIGINAL_INSTALL_PASS")
+          adjusted=pathlib.Path("requirements-semantic.txt").read_text(encoding="utf-8").replace(
+              "tokenizers==0.23.3","tokenizers==0.22.1")
+          # No mutation of private sources or package pin. One ephemeral temporary
+          # requirement for the Colab compatibility ONLY.
+          import tempfile
+          with tempfile.TemporaryDirectory() as tmp:
+            r=pathlib.Path(tmp)/"semantic-colab-compat.txt"
+            r.write_text(adjusted,encoding="utf-8")
+            fix=[x for x in orig if x!="requirements-semantic.txt"]
+            fix[fix.index("requirements.txt")+1:fix.index("requirements.txt")+1]=["-r",str(r)]
+            corrected_rc,raw_fix=check(fix)
+          print("COLAB_PINNED_0221_DRY_RUN_EXIT="+str(corrected_rc))
+          print("COLAB_CORRECTED_RESOLVER_PASS="+str(corrected_rc==0).lower())
+          if corrected_rc:
+            names=["tokenizers","transformers","sqlcipher3-wheels","onnxruntime","sentencepiece","huggingface-hub"]
+            present=[n for n in names if n in raw_fix]
+            print("COLAB_CORRECTED_SUSPECTS="+",".join(present))
+            raise SystemExit(3)
+          print("PASS_CASE34_PIP_ROOT_CAUSE_AND_COMPATIBILITY_NO_GPU")
+          PY
+      - name: Remove private checkout and files
+        if: ${{ always() }}
+        run: rm -rf private_psyai
