@@ -27,3 +27,16 @@
 - Colab T4 с ограниченной свободной VRAM **не эквивалентен RTX 4060 по скорости**, проверяется в основном память и функциональность. 8 GiB — доступный GPU memory budget, не точная аппаратная эмуляция.
 - У каждого длительного этапа должны быть `START/PASS/FAIL/TIMEOUT`, elapsed и reason code.
 - Не утверждать «модель загружена», пока `pinned_model`/инференс не подтверждены заверенным receipt.
+
+## Обязательная последовательность с 18.11.2026 (независимый журнал)
+
+1. Изменения вносить в исходники **до** запуска. Проверить syntax `py_compile` и наличие правил `8192 MiB`, SHA модели и `case34_full_e2e=False`.
+2. Требовать `contents: read` и `statuses: write` в GitHub Actions; `GITHUB_TOKEN` передавать **только** локальному `tools/psyai_gpu8_colab_bridge.py`, никогда — процессу `colab`, удалённому ноутбуку и артефактам.
+3. До открытия удалённого Colab выполнить тестовую запись commit status `psyai-gpu8/heartbeat`. **Если запись в GitHub не прошла, завершить локально ошибкой `STATUS_JOURNAL_UNAVAILABLE`**, не создавать дорогостоящую GPU-сессию.
+4. После успешной проверки запускать один Colab CLI: `colab --auth=adc run --gpu T4 tools/psyai_case34_gpu8_colab_probe.py`. Ограничить выполнение bridge 40 минутами, GitHub job 45 минутами; отдельный 85-минутный общий таймаут — запас на подготовку.
+5. Пока bridge работает, посылать в commit status `psyai-gpu8/heartbeat` сигнал раз в 60 секунд; в сообщении `waiting_for_colab_output` не утверждать, что GPU выделен или модель загружена. Когда CLI отдаёт маркеры, публиковать `psyai-gpu8/stage/<name>`: `START/PASS/FAIL/TIMEOUT/BLOCKED`.
+6. После завершения сохранять SHA-проверенный `psyai_gpu8_proof.json` и терминальный статус. При отсутствии заверенного receipt — `INCOMPLETE/FAIL`, **не PASS**. Смотреть на сам run, но при `404 BlobNotFound` для Actions job logs читать **commit statuses** через `GitHub -> commit -> Statuses` или GitHub REST `GET /repos/vicrex/avrora-colab-launcher/commits/<HEAD_SHA>/statuses`.
+7. `cancel-in-progress: true` для группы `psyai-colab-cpu-global-nonparallel` отменяет старый параллельный запуск при новом `push` в файл workflow. Проверить старый run `conclusion=cancelled` **отдельно**, перед заявлением об остановке. Не запускать новые дубли.
+8. Зафиксировать подтверждённый пик VRAM, время загрузки/сборки, время inference и `generation_verified`. Затем, **в отдельном запуске**, проводить приватный E2E CASE34 (34 синтетические реплики, неклинические психологические гипотезы, E5 + граф + NLI, все `SUPPORTED` с цитатой, целевое 600–900 секунд) — не выдавать canary «маяк» за полный анализ.
+
+**Гарантия наблюдаемости имеет границу:** GitHub heartbeat подтверждает работу *локального процесса bridge*. Статус GPU/модели подтверждается **только** маркерами Colab и валидным удалённым receipt. Если CLI буферизует stdout, commit statuses смогут показывать только `waiting_for_colab_output`. Для настоящей телеметрии внутри Colab может потребоваться отдельный удалённый канал или CLI streaming.
