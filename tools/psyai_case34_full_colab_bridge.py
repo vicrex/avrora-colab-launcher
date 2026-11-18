@@ -186,16 +186,29 @@ def main():
                             encoding="utf-8")
             path.chmod(0o600)
             print("CASE34_COLAB_FULL_REAL_EXECUTION_START",flush=True)
-            with log.open("wb") as output:
-                try:
-                    child=subprocess.run(["colab","--auth=adc","run","--gpu","T4",
-                        "--timeout","3000",str(path)],stdout=output,stderr=subprocess.STDOUT,
-                        stdin=subprocess.DEVNULL,timeout=3300,check=False)
-                    returncode=child.returncode
-                except (OSError,subprocess.TimeoutExpired):
-                    raise ValueError("COLAB_PRIVATE_TRANSPORT_TIMEOUT") from None
-            proof=bounded_receipt(log,ORIGINAL_SHA,src_sha)
-            proof["colab_exit_code"]=returncode
+            proof=None
+            for variant in ("T4","L4"):
+                with log.open("wb") as output:
+                    try:
+                        child=subprocess.run(["colab","--auth=adc","run","--gpu",variant,
+                            "--timeout","3000",str(path)],stdout=output,stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL,timeout=3300,check=False)
+                        returncode=child.returncode
+                    except (OSError,subprocess.TimeoutExpired):
+                        raise ValueError("COLAB_PRIVATE_TRANSPORT_TIMEOUT") from None
+                if returncode:
+                    reason=safe_gpu_allocation_reason(log)
+                    if variant=="T4" and reason=="COLAB_GPU_ASSIGNMENT_REJECTED":
+                        print("CASE34_T4_REFUSED_TRY_L4_ONCE",flush=True)
+                        continue
+                    if reason!="OTHER_FAILURE":raise ValueError(reason)
+                proof=bounded_receipt(log,ORIGINAL_SHA,src_sha)
+                proof["colab_exit_code"]=returncode
+                proof["gpu_variant"]=variant
+                proof["receipt_sha256"]=sha(canon({k:v for k,v in proof.items()
+                                                    if k!="receipt_sha256"}).encode("ascii"))
+                break
+            if proof is None:raise ValueError("COLAB_GPU_ASSIGNMENT_REJECTED")
             allowed=proof.get("status")=="CANDIDATE_FOR_EXPERT_REVIEW" and returncode==0
             if not allowed:print("CASE34_COLAB_FULL_NOT_ACCEPTED",flush=True)
     except (ValueError,OSError,subprocess.CalledProcessError,json.JSONDecodeError) as exc:
