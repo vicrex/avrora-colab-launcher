@@ -1,5 +1,14 @@
 # AVRORA / PsyAI Colab launcher — постоянные инструкции для агентов
 
+## ОФИЦИАЛЬНАЯ ПРОВЕРКА GIT → COLAB И T4 18.11.2026
+
+Прочитать **[PSYAI_COLAB_GITHUB_OFFICIAL_DEPLOYMENT_20261118.md](https://github.com/vicrex/PSYAI_PROFESSIONAL/blob/fix/psyai-case34-e2e-receipts-20261118/docs/PSYAI_COLAB_GITHUB_OFFICIAL_DEPLOYMENT_20261118.md)** до работы с Colab. Проверена официальная документация Google Colab CLI: `colab run` — штатная команда, сначала выделяет GPU, затем выполняет локальный Python-файл; альтернативный правильный маршрут для точного private Git checkout — `actions/checkout` с SSH deploy key → SHA-pinned `git archive` → `colab new -s ... --gpu T4` → `colab upload` файлов → `colab exec -f` → `colab download` → `colab stop` **только своей сессии**. Но эти изменения транспорта НЕ исправят ошибку отказа выделения GPU.
+
+**Факты:** `44267654094` — настоящий минимальный `colab --auth=adc run --gpu T4`, **GPU allocation rejected**, до любого кода Gemma; `44277100123` — официальное read-only `colab --auth=adc sessions`, **SUCCESS: 0 активных сессий, 0 T4, 0 orphan**, без создания GPU. Старый рабочий Gemma GPU smoke `44244184390` PASS; приватный CASE34 и `git archive` PASS. **Точный механизм квоты/вместимости Google не доказан** — 412 может быть misleading `TooManyAssignmentsError` (официальный issue Google Colab CLI #73), отсутствие сессий НЕ гарантирует GPU. Текущее состояние `COLAB_T4_ASSIGNMENT_BLOCKED`, `FULL_CASE34_NOT_ACCEPTED`.
+
+**ОСТАНОВКА ДУБЛИКАТОВ:** не запускать новые GPU-пробы, не переделывать токены/Google Drive/публичный Git, не подменять T4 на CPU под видом 10–15 минут, не объявлять полный CASE34 работающим. Проверку исходников и CLI считать завершённой, пока не изменился код. При подтверждённом доступе T4 — один штатный защищённый прогон; при отказе — документировать, не перезапускать. Режим Work не использовать в автоматизациях без прямого разрешения.
+
+
 ## ⛔ КАНОНИЧЕСКИЙ ПОРЯДОК CASE34: не повторять ошибочные шаги
 
 **Единственный источник истины: [PSYAI_CASE34_CANONICAL_LAUNCH_ORDER.md](https://github.com/vicrex/PSYAI_PROFESSIONAL/blob/fix/psyai-case34-e2e-receipts-20261118/docs/PSYAI_CASE34_CANONICAL_LAUNCH_ORDER.md).** Читать его **первым**, даже если ниже есть старые сообщения «запуск готов» или «нужен Drive OAuth»: это исторические статусы. Проверка настоящего источника PASS (GitHub run **44257700183**), Gemma T4 **GPU SMOKE PASS** (run **44244184390**), Linux-совместимость PASS (run **44259843119**), статический Colab-архив PASS (run **44261083781**). Эти этапы **НЕ ПОВТОРЯТЬ**.
