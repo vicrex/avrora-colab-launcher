@@ -1,0 +1,110 @@
+name: PsyAI CASE34 Linux E2E compatibility gate (offline, NO GPU)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/psyai-case34-linux-e2e-offline.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: psyai-case34-linux-offline-single
+  cancel-in-progress: false
+
+jobs:
+  linux-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HAS_PSYAI_DEPLOY_KEY: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY != '' }}
+      PSYAI_LICENSE_ENFORCE: '0'
+      PSYAI_SKIP_AUTO_INSTALL: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Public launcher checkout (no persisted token)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Require existing read-only PsyAI deploy key
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$HAS_PSYAI_DEPLOY_KEY" != 'true' ]]; then
+            echo 'BLOCKED_EXISTING_PRIVATE_PSYAI_DEPLOY_KEY'
+            exit 2
+          fi
+
+      - name: Checkout exact private branch commit for Linux compatibility
+        uses: actions/checkout@v4
+        with:
+          repository: vicrex/PSYAI_PROFESSIONAL
+          ref: 4f364ecedbbbc4b5de5205c4058b6972684d3ce4
+          path: private_psyai
+          persist-credentials: false
+          ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
+          ssh-strict: true
+          ssh-known-hosts: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+
+      - name: Check exact source SHA, Python compile and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C private_psyai rev-parse HEAD)" = "4f364ecedbbbc4b5de5205c4058b6972684d3ce4"
+          cd private_psyai
+          python -B - <<'PY'
+          from pathlib import Path
+          for name in ("tools/e2e_full_gemma.py",
+                       "tools/run_case34_hybrid_acceptance.py",
+                       "tools/case34_private_secret_preflight.py",
+                       "tests/test_case34_linux_runtime.py",
+                       "tests/test_case34_private_secret_preflight.py"):
+              compile(Path(name).read_bytes(),name,"exec")
+          print("PASS_SOURCE_SYNTAX_NO_GPU")
+          PY
+          python -m pip -q install --disable-pip-version-check 'pytest>=8,<10'
+          python -B -m pytest -q -p no:cacheprovider \
+            tests/test_case34_linux_runtime.py \
+            tests/test_case34_private_secret_preflight.py
+          echo 'PASS_LINUX_DRIVER_AND_SOURCE_PRIVACY_FIXTURES'
+
+      - name: Install production minimal dependencies on Linux (no model)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd private_psyai
+          python -m pip -q install --disable-pip-version-check -r requirements.txt -r requirements-semantic.txt
+          echo 'PASS_LINUX_PRODUCTION_DEPENDENCIES'
+
+      - name: Import actual PsyAI app without Gemma or patient data
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PSYAI_HOME="$RUNNER_TEMP/psyai-case34-verify-home"
+          export PSYAI_DATA_DIR="$PSYAI_HOME/data"
+          export PSYAI_PATHS_FILE="$PSYAI_HOME/paths.json"
+          mkdir -p "$PSYAI_HOME" "$PSYAI_DATA_DIR"
+          cd private_psyai
+          python -B - <<'PY'
+          import app
+          import model_runtime
+          import embedding_model
+          import analysis_bundle
+          assert app.app is not None
+          assert model_runtime.MODEL_SHA == "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b"
+          print("PASS_REAL_PSYAI_APP_LINUX_IMPORT_NO_MODEL")
+          PY
+
+      - name: Remove private source and ephemeral test home
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -rf private_psyai "$RUNNER_TEMP/psyai-case34-verify-home"
+          echo 'PASS_NO_PRIVATE_FILES_LEFT_IN_RUNNER'
