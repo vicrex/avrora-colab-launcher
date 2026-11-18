@@ -1,5 +1,14 @@
 # AVRORA / PsyAI Colab launcher — постоянные инструкции для агентов
 
+## ⛔ КАНОНИЧЕСКИЙ ПОРЯДОК CASE34: не повторять ошибочные шаги
+
+**Единственный источник истины: [PSYAI_CASE34_CANONICAL_LAUNCH_ORDER.md](https://github.com/vicrex/PSYAI_PROFESSIONAL/blob/fix/psyai-case34-e2e-receipts-20261118/docs/PSYAI_CASE34_CANONICAL_LAUNCH_ORDER.md).** Читать его **первым**, даже если ниже есть старые сообщения «запуск готов» или «нужен Drive OAuth»: это исторические статусы. Проверка настоящего источника PASS (GitHub run **44257700183**), Gemma T4 **GPU SMOKE PASS** (run **44244184390**), Linux-совместимость PASS (run **44259843119**), статический Colab-архив PASS (run **44261083781**). Эти этапы **НЕ ПОВТОРЯТЬ**.
+
+**Последний реальный FULL CASE34 — run 44261669852 = FAIL:** секрет и исходник с правильным SHA PASS; T4 GPU memory partition PASS; далее `PRODUCTION_DEPENDENCIES_UNAVAILABLE` за ~7 с; Gemma, E5, NLI, V2, граф, PDF/DOCX не выполнялись. Предыдущий run 44261405530 упал на Python 3.11 для `google-colab-cli==0.7.4`; исправлено на **Python 3.12**. **Привязанный к GitHub артефакту `receipt_sha256` тоже требует исправления:** bridge добавляет `colab_exit_code` после вычисления SHA — не заявлять независимую верификацию финального JSON.
+
+**Следующий шаг СТРОГО БЕЗ GPU:** определить конкретный пакет/конфликт pip через синтетическую Linux/Python 3.12 проверку, затем исправить финальный SHA receipt и протестировать на синтетике. Только после PASS обоих gates — **один** FULL cold-run. Нет нового Google OAuth, нет переустановки Colab, нет дублирования запусков, нет EXE, нет исходника в публичном Git и нет самовольного Work. **Текущий статус: FULL_CASE34_NOT_ACCEPTED.**
+
+
 ## VERIFIED_CASE34_SOURCE_GATE_PASS — run 44257700183
 
 **ИТОГ РЕАЛЬНОГО ЗАПУСКА: PASS (18.11.2026).** GitHub Actions [run 44257700183](https://github.com/vicrex/avrora-colab-launcher/actions/runs/44257700183), `completed/success`, workflow `psyai-case34-private-source-gate.yml`, код запуска commit `2164b151bbfbe89a086d798eedc16db6f97353d9`, приватный SHA-кода тестов `af40d23f66fff39a5648589c37fd77ca5461a859`. Предыдущая попытка run `44257512252` остановилась на синтетическом тесте `bytes.replace(str)`; исправлена только ошибка теста, **реальный оригинал не менялся**.
