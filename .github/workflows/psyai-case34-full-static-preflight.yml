@@ -58,6 +58,7 @@ jobs:
           python -B tools/test_psyai_case34_colab_full_preflight.py
           python -B tools/test_psyai_case34_archived_entrypoint.py
           echo "PASS_COLAB_FULL_OFFLINE_STATIC_CONTRACT_NO_MODEL_NO_CASE34"
+          echo "PASS_SYNTHETIC_T4_L4_FALLBACK_CONTRACT"
 
       - name: Destroy ephemeral private source directory
         if: ${{ always() }}
