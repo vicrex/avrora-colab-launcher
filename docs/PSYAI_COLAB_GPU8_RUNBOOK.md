@@ -1,5 +1,21 @@
 # PsyAI → Colab: ЕДИНСТВЕННЫЙ порядок запуска (18.11.2026)
 
+## CASE34 PRIVATE SOURCE READINESS — verified scope blocker
+
+**Не переизобретать проверку и не запускать модель:** отдельный read-only, NO-GPU workflow уже реализован — `.github/workflows/psyai-case34-private-source-gate.yml`, а приватный helper — `vicrex/PSYAI_PROFESSIONAL` → `tools/case34_private_drive_preflight.py`. Источники в публичный launcher/артефакты не передаются.
+
+**Контрольные запуски:**
+- Run [44246391842](https://github.com/vicrex/avrora-colab-launcher/actions/runs/44246391842) = `completed/failure`, `BLOCKED_EXISTING_PRIVATE_DRIVE_ADC_NOT_PRESENT`: отсутствует отдельный `AVRORA_PRIVATE_DRIVE_ADC_JSON_B64`. Проверка наличия приватного GitHub deploy key прошла.
+- Run **[44247014426](https://github.com/vicrex/avrora-colab-launcher/actions/runs/44247014426)** = `completed/failure`, код commit `53653e734aadc98cfd4ac97a210cf87d05c49e25`. Вторая проверка без GPU протестировала **уже существующий Colab ADC** как запасной вариант, *без запроса нового OAuth scope*: `PRIVATE_DRIVE_SCOPE_NOT_PREGRANTED`. Приватный checkout, статическая проверка скрипта и наличие Colab ADC прошли. Артефакт `psyai-case34-readonly-gate-44247014426`, ID `14401469693`, SHA-256 ZIP `3ffd736d08da4f20c1e965ad6821a9fc6ec3ff522abcab5c499104c8543f1a99`. Внутренний receipt hash независимо пересчитан — совпал; `model_started=false`, `source_uploaded=false`.
+- Оригинальный приватный файл отдельно прочитан **через уже подключённый Google Drive в сессии владельца**, подтверждены объём, SHA и роли 34 реплик. Это **не** доказывает, что Colab уже имеет право его прочитать.
+
+**Проверенная причина остановки:** недостаёт **одного** разрешённого механизма чтения закрытого Google Drive в изолированном GitHub Actions/Colab. Штатный `AVRORA_COLAB_ADC_JSON_B64` не имеет Drive scope; `AVRORA_PRIVATE_DRIVE_ADC_JSON_B64` отсутствует. Нельзя самовольно расширять scopes, публиковать диалог, делать link sharing, вставлять transcript в публичный репозиторий или GitHub workflow args. Успешная модельная GPU8-контрольная проверка `44244184390` остаётся **PASS**, повторять её НЕ НУЖНО.
+
+**Единственный следующий технический gate:** владелец должен один раз одобрить безопасное Drive чтение (существующий инструмент настройки `tools/connect_private_drive_cloud_shell.sh` + `tools/verify_private_drive_adc.py`; сохранять OAuth JSON **только через защищённый GitHub secret** `AVRORA_PRIVATE_DRIVE_ADC_JSON_B64`, не в чат/коммит/логи). Этот прежний инструмент даёт полномасштабный scope `drive`, поэтому пользователь должен знать границу прав доступа и при желании использовать отдельную учётную запись. После настройки — один ручной `workflow_dispatch` уже готового `psyai-case34-private-source-gate.yml`; проверять `source_verified=true`, настоящий SHA/17+17 и `source_uploaded=false`. До PASS НЕ запускать платный/тяжёлый Colab CASE34.
+
+**Статусы:** `GPU8_BASELINE_VERIFIED`, `CASE34_ORIGINAL_BYTES_VERIFIED_LOCALLY`, `CASE34_PRIVATE_DRIVE_OAUTH_MISSING`, `FULL_CASE34_E2E_NOT_STARTED`.
+
+
 ## ✅ VERIFIED_GPU8_SERVER_BASELINE — 18.11.2026
 
 **СТАТУС: ПРОВЕРЕНО ПОВТОРНЫМ ЧТЕНИЕМ GITHUB + АРТЕФАКТА.** Это **один GPU-smoke**, а не полный CASE34.
