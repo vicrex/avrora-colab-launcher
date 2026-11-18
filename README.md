@@ -1,5 +1,10 @@
 # AVRORA public Colab launcher
 
+## PsyAI → Colab: закреплённый порядок запуска
+
+**Не настраивать Colab заново.** Постоянный порядок запуска, существующая авторизация `AVRORA_COLAB_ADC_JSON_B64`, GPU8 T4, проверка реальных запусков/ошибок, pinned SHA модели и бинарников, отдельная приёмка CASE34: **[docs/PSYAI_COLAB_GPU8_RUNBOOK.md](docs/PSYAI_COLAB_GPU8_RUNBOOK.md)**. В начале каждой новой сессии сначала читать этот файл и `AGENTS.md`. Один GPU preflight **не означает** выполненный полный CASE34.
+
+
 Safe, public CPU-only Google Colab smoke runner for the private AVRORA project. **No private AVRORA code, private Google Drive data, trading credentials or trading orders** are contained in this repository. All jobs run with `REAL=OFF` and `HOLDOUT=SEALED`.
 
 ## Private P900 Wave/Fibonacci Colab replay — live and gated (2026-10-19)
