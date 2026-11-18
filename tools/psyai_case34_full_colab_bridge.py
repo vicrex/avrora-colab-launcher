@@ -150,7 +150,10 @@ def bounded_receipt(log,original_sha,expected_src):
              "hypothesis_count","hybrid_shadow_seconds","failure_codes",
              "pdf_bytes","pdf_sha256","docx_bytes","docx_sha256",
              "execution_exit_code","case34_execution_seconds","reason_code",
-             "elapsed_seconds","automated_checks_pass"}
+             "elapsed_seconds","automated_checks_pass",
+              "model_calls","cache_hits","retries","input_tokens",
+              "output_tokens","prefill_seconds","decode_seconds",
+              "psyai_last_stage","psyai_stage_count"}
     proof={k:parsed[k] for k in allowed if k in parsed}
     if proof.get("status") not in {"CANDIDATE_FOR_EXPERT_REVIEW","NOT_ACCEPTED",
                                  "BLOCKED_OR_FAILED"}:
