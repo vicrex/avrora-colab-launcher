@@ -31,7 +31,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Require existing read-only PsyAI deploy key
         shell: bash
@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: 83679d96b8b13f269bd82f1df21501d6428e2eeb
+          ref: 758535720cbefb5e6ae4968fe7250661b02e92b2
           path: private_psyai
           persist-credentials: false
           ssh-key: ${{ secrets.PSYAI_SOURCE_DEPLOY_KEY }}
@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C private_psyai rev-parse HEAD)" = "83679d96b8b13f269bd82f1df21501d6428e2eeb"
+          test "$(git -C private_psyai rev-parse HEAD)" = "758535720cbefb5e6ae4968fe7250661b02e92b2"
           cd private_psyai
           python -B - <<'PY'
           from pathlib import Path
@@ -101,6 +101,47 @@ jobs:
           assert model_runtime.MODEL_FILE == "gemma-4-12b-it-qat-q4_0.gguf"
           assert model_runtime.MODEL_REV == "ef7b15515d7ed7f34305a08edb5717e7989d6dc9"
           print("PASS_REAL_PSYAI_APP_LINUX_IMPORT_NO_MODEL")
+          PY
+
+      - name: Assert safe pre-Gemma receipt for a synthetic failure (NO patient data)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd private_psyai
+          python -B - <<'PY'
+          import argparse,sys,pathlib,tempfile,json
+          root=pathlib.Path.cwd()
+          sys.path.insert(0,str(root/"tools"))
+          import run_case34_hybrid_acceptance as runner
+          import embedding_model
+          with tempfile.TemporaryDirectory(prefix="psyai-gate-",dir=root.parent) as t:
+              home=pathlib.Path(t)
+              src=home/"synthetic.txt"
+              src.write_text("Клиент: ONLY SYNTHETIC",encoding="utf-8")
+              nli=home/"nli";nli.mkdir()
+              (nli/"config.json").write_text("{}",encoding="ascii")
+              runner._repo_sha_and_branch=lambda: "e"*40
+              runner.check_source=lambda path: ("synthetic_only",34)
+              runner._assert_model=lambda *args:home/"fake.gguf"
+              original_verify=embedding_model.verify
+              embedding_model.verify=lambda *args,**kwargs:{"ok":False}
+              try:
+                  args=argparse.Namespace(work=str(root.parent),source=str(src),
+                      output=str(home/"evidence"),nli_model_dir=str(nli),
+                      mode="HYBRID",force_one_retry=False)
+                  try:
+                      runner.execute(args)
+                  except ValueError as exc:
+                      assert str(exc)=="PINNED_E5_NOT_INSTALLED_OR_INVALID"
+                  else:
+                      raise AssertionError("EXPECTED_SAFE_PRECHECK_FAILURE")
+              finally:
+                  embedding_model.verify=original_verify
+              evidence=json.loads((home/"evidence"/"CASE34_HYBRID_LAST_RUN.json").read_text())
+              assert evidence["verification"]["automated_failures"]==[
+                  "PINNED_E5_NOT_INSTALLED_OR_INVALID"]
+              assert evidence["real_gemma"] is False
+          print("PASS_SAFE_EARLY_FAILURE_RECEIPT_NO_GPU")
           PY
 
       - name: Remove private source and ephemeral test home
