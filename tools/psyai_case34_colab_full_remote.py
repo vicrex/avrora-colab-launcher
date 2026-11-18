@@ -331,7 +331,8 @@ def main():
                 PSYAI_LICENSE_ENFORCE="0",PSYAI_SKIP_AUTO_INSTALL="1",
                 PYTHONNOUSERSITE="1",PYTHONDONTWRITEBYTECODE="1",
                 PSYAI_COLAB_VERIFIED_PRIVATE_HEAD=PRIVATE_HEAD,
-                PSYAI_COLAB_VERIFIED_PRIVATE_ARCHIVE_SHA256=PACK_SHA)
+                PSYAI_COLAB_VERIFIED_PRIVATE_ARCHIVE_SHA256=PACK_SHA,
+                PSYAI_CASE34_TEST_ONLY_WALL_SECONDS="1800")
             for folder in ("models","temp","cache","logs","evidence","data"):
                 (work/folder).mkdir(exist_ok=True)
             resultfile=work/"evidence"/"CASE34_HYBRID_LAST_RUN.json"
@@ -341,7 +342,7 @@ def main():
                   str(source/"tools"/"run_case34_hybrid_acceptance.py"),
                   "--run","--work",str(work),"--source",str(original),
                   "--nli-model-dir",str(nli),"--output",str(work/"evidence"),
-                  "--mode","HYBRID","--hard-timeout-seconds","1800"]
+                  "--mode","HYBRID","--hard-timeout-seconds","2000"]
             progress("FULL_PSYAI_CASE34","START")
             before=time.monotonic()
             with tempfile.TemporaryFile(mode="w+b") as diagnostic:
