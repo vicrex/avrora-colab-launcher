@@ -42,8 +42,7 @@ jobs:
             exit 2
           fi
           if [ "$HAS_PRIVATE_DRIVE_ADC" != "true" ]; then
-            echo "BLOCKED_EXISTING_PRIVATE_DRIVE_ADC_NOT_PRESENT"
-            exit 2
+            echo "PRIVATE_DRIVE_SECRET_NOT_SET_TEST_EXISTING_COLAB_ADC_SCOPE_ONLY"
           fi
           if [ "$HAS_COLAB_ADC" != "true" ]; then
             echo "BLOCKED_EXISTING_COLAB_ADC_NOT_PRESENT"
@@ -55,7 +54,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: 11769d6d0ada994344289690e0152968dacc845f
+          ref: fde27dd19e832379da1750593eeda6c52b85dc09
           path: private_psyai
           fetch-depth: 1
           persist-credentials: false
@@ -67,7 +66,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C private_psyai rev-parse HEAD)" = "11769d6d0ada994344289690e0152968dacc845f"
+          test "$(git -C private_psyai rev-parse HEAD)" = "fde27dd19e832379da1750593eeda6c52b85dc09"
           python -B - <<'PY'
           import pathlib
           path=pathlib.Path('private_psyai/tools/case34_private_drive_preflight.py')
@@ -84,7 +83,10 @@ jobs:
       - name: Verify original private Drive bytes and roles WITHOUT upload
         shell: bash
         env:
-          PSYAI_CASE34_PRIVATE_DRIVE_ADC_B64: ${{ secrets.AVRORA_PRIVATE_DRIVE_ADC_JSON_B64 }}
+          # Fallback only when the ALREADY GRANTED scope declares Drive.
+          # The private preflight rejects cloud-only Colab scopes without
+          # a token refresh, Drive GET or new consent.
+          PSYAI_CASE34_PRIVATE_DRIVE_ADC_B64: ${{ secrets.AVRORA_PRIVATE_DRIVE_ADC_JSON_B64 || secrets.AVRORA_COLAB_ADC_JSON_B64 }}
         run: |
           set +x
           python -B private_psyai/tools/case34_private_drive_preflight.py --receipt case34-source-preflight.json
