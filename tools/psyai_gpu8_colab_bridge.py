@@ -60,7 +60,10 @@ def classify_cli(text):
 
 def main():
     started=time.monotonic()
-    cli=["colab","--auth=adc","run","--gpu","T4",
+    # Verified against google-colab-cli v0.7.4's run_command signature:
+    # default --timeout is only 30 s; remote GGUF download/build requires
+    # an explicit 35-minute kernel execution deadline.
+    cli=["colab","--auth=adc","run","--gpu","T4","--timeout","2100",
          "tools/psyai_case34_gpu8_colab_probe.py"]
     proof={"schema":"PSYAI_GPU8_COLAB_BRIDGE_V2","status":"BLOCKED_NO_VALID_REMOTE_RECEIPT",
            "gpu_requested":"T4","vram_cap_mib":8192,
