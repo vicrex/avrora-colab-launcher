@@ -12,6 +12,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
+import urllib.request
 import tempfile
 import time
 
@@ -21,6 +23,17 @@ MODEL_REV="ef7b15515d7ed7f34305a08edb5717e7989d6dc9"
 MODEL_FILE="gemma-4-12b-it-qat-q4_0.gguf"
 MODEL_SHA="93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b"
 CAP_MIB=8192
+# Official GitHub release b11774, not mutable llama.cpp/main.
+CUDA_TAG="b11774"
+CUDA_ASSETS=(
+    ("llama-b11774-bin-ubuntu-cuda-12.8-x64.tar.gz",
+     "7d03c8482b62c9533d47e777c0d3ca2edce6e57916b51f587a4576d332757fbb",
+     "cuda_binary_download"),
+    ("cudart-llama-b11774-bin-ubuntu-cuda-12.8-x64.tar.gz",
+     "d4fe9a68a521add2001396fdc324dcc613104a2e7a175b68823448793bf8eb9f",
+     "cuda_runtime_download"),
+)
+
 MIB=1024*1024
 
 def canon(obj):
@@ -62,6 +75,38 @@ def command(cmd, timeout=1200, label="external_command"):
         progress(label,"PASS" if rc==0 else "FAIL",time.monotonic()-started,
                  exit_code=rc,reason_code=reason)
         return rc
+
+
+def download_pinned_asset(root:Path,filename:str,expected_sha:str,label:str)->Path:
+    """Stream an official pinned release, enforce size and SHA before extraction."""
+    url=("https://github.com/ggml-org/llama.cpp/releases/download/"
+         +CUDA_TAG+"/"+filename)
+    path=root/filename
+    partial=root/(filename+".partial")
+    limit_bytes=800_000_000
+    started=time.monotonic()
+    progress(label,"START")
+    try:
+        digest=hashlib.sha256()
+        total=0
+        with urllib.request.urlopen(url,timeout=60) as response,partial.open("wb") as dst:
+            while True:
+                block=response.read(8*1024*1024)
+                if not block:break
+                total+=len(block)
+                if total>limit_bytes:raise RuntimeError("CUDA_ASSET_SIZE_EXCEEDED")
+                digest.update(block)
+                dst.write(block)
+        if digest.hexdigest()!=expected_sha:
+            raise RuntimeError("PINNED_CUDA_ASSET_SHA_MISMATCH")
+        os.replace(partial,path)
+        progress(label,"PASS",time.monotonic()-started)
+        return path
+    except Exception:
+        partial.unlink(missing_ok=True)
+        progress(label,"FAIL",time.monotonic()-started,reason_code="CUDA_ASSET_VERIFICATION_FAILED")
+        raise RuntimeError("CUDA_ASSET_VERIFICATION_FAILED") from None
+
 
 def gpu_memory():
     p=subprocess.run(["nvidia-smi","--query-gpu=memory.total,memory.used,memory.free",
@@ -143,19 +188,30 @@ def main():
             progress("model_sha256","PASS",time.monotonic()-sha_started)
             receipt["model_sha256_verified"]=True
             stage("pinned_model","PASS")
-            src=root/"llama.cpp"
-            if command(["git","clone","--quiet","--depth","1",
-                        "https://github.com/ggml-org/llama.cpp.git",str(src)],600,label="llama_clone"):
-                raise RuntimeError("LLAMA_CPP_CLONE_FAILED")
-            build=src/"build"
-            if command(["cmake","-S",str(src),"-B",str(build),"-DGGML_CUDA=ON",
-                        "-DLLAMA_CURL=OFF","-DGGML_NATIVE=OFF"],600,label="cuda_configure"):
-                raise RuntimeError("LLAMA_CUDA_CONFIG_FAILED")
-            if command(["cmake","--build",str(build),"--target","llama-cli","-j","4"],1500,label="cuda_build"):
-                raise RuntimeError("LLAMA_CUDA_BUILD_FAILED")
-            cli=next((p for p in build.rglob("llama-cli") if p.is_file() and os.access(p,os.X_OK)),None)
-            if not cli:raise RuntimeError("LLAMA_CLI_MISSING")
+            # Reuse a VERIFIED official CUDA build; compiling llama.cpp from
+            # upstream main previously consumed 1500 seconds and timed out.
+            # Pin both immutable release tag and the official asset digests.
+            bundle=root/"llama_official_cuda"
+            bundle.mkdir()
+            for name,digest,label in CUDA_ASSETS:
+                artifact=download_pinned_asset(root,name,digest,label)
+                with tarfile.open(artifact,"r:gz") as archive:
+                    # Python 3.12 data filter rejects path traversal and
+                    # links outside the extraction root.
+                    archive.extractall(bundle,filter="data")
+            cli=next((p for p in bundle.rglob("llama-cli") if p.is_file()
+                and not p.is_symlink()),None)
+            if not cli:raise RuntimeError("PINNED_LLAMA_CLI_MISSING")
+            cli.chmod(cli.stat().st_mode|0o111)
             stage("cuda_llama_binary","PASS")
+            # Prebuilt libraries may be in a nested bin/lib directory.
+            runtime_env=os.environ.copy()
+            libs={str(cli.parent),str(bundle)}
+            for pattern in ("libggml*.so*","libcudart.so*","libcublas.so*"):
+                for f in bundle.rglob(pattern):
+                    libs.add(str(f.parent))
+            runtime_env["LD_LIBRARY_PATH"]=os.pathsep.join(
+                sorted(libs)+[runtime_env.get("LD_LIBRARY_PATH","")])
             # Small GPU layer count is intentional: CPU offload allowed, full
             # CUDA load is not evidence of an 8-GiB device simulation.
             args=[str(cli),"-m",str(model),"-ngl","20","-c","2048",
@@ -163,7 +219,7 @@ def main():
                   "-p","Как называется башня с огнём, помогающая кораблям найти берег? Ответь одним русским словом."]
             progress("model_inference","START")
             inference_started=time.monotonic()
-            with subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT) as proc:
+            with subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=runtime_env) as proc:
                 peak=0
                 over=False
                 timed_out=False
