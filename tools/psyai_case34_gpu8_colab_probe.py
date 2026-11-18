@@ -134,6 +134,21 @@ def recognize_generated_canary(raw:bytes)->tuple[bool,dict]:
     return bool(raw.strip()) and (ru or en),metadata
 
 
+def canary_command(executable:Path, model:Path)->list[str]:
+    """Pinned non-interactive path: llama-completion, not terminal llama-cli.
+
+    Official llama.cpp docs recommend --jinja --single-turn for one-shot
+    instruct generation; --simple-io is for redirected subprocess streams.
+    No interactive input and no model stdout is published.
+    """
+    return [
+        str(executable),"-m",str(model),"-ngl","20","-c","2048",
+        "-b","256","-ub","128","-n","32",
+        "--jinja","--single-turn","--simple-io","--no-display-prompt",
+        "-p","Как называется башня с огнём, помогающая кораблям найти берег? Ответь одним русским словом.",
+    ]
+
+
 def gpu_memory():
     p=subprocess.run(["nvidia-smi","--query-gpu=memory.total,memory.used,memory.free",
                        "--format=csv,noheader,nounits"],capture_output=True,
@@ -225,9 +240,9 @@ def main():
                     # Python 3.12 data filter rejects path traversal and
                     # links outside the extraction root.
                     archive.extractall(bundle,filter="data")
-            cli=next((p for p in bundle.rglob("llama-cli") if p.is_file()
+            cli=next((p for p in bundle.rglob("llama-completion") if p.is_file()
                 and not p.is_symlink()),None)
-            if not cli:raise RuntimeError("PINNED_LLAMA_CLI_MISSING")
+            if not cli:raise RuntimeError("PINNED_LLAMA_COMPLETION_MISSING")
             cli.chmod(cli.stat().st_mode|0o111)
             stage("cuda_llama_binary","PASS")
             # Prebuilt libraries may be in a nested bin/lib directory.
@@ -240,12 +255,10 @@ def main():
                 sorted(libs)+[runtime_env.get("LD_LIBRARY_PATH","")])
             # Small GPU layer count is intentional: CPU offload allowed, full
             # CUDA load is not evidence of an 8-GiB device simulation.
-            args=[str(cli),"-m",str(model),"-ngl","20","-c","2048",
-                  "-b","256","-ub","128","-n","32","--no-display-prompt",
-                  "-p","Как называется башня с огнём, помогающая кораблям найти берег? Ответь одним русским словом."]
+            args=canary_command(cli,model)
             progress("model_inference","START")
             inference_started=time.monotonic()
-            with subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=runtime_env) as proc:
+            with subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,env=runtime_env) as proc:
                 peak=0
                 over=False
                 timed_out=False

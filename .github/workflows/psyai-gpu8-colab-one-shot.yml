@@ -46,6 +46,16 @@ jobs:
           assets={name:digest for name,digest,_ in module.CUDA_ASSETS}
           assert assets["llama-b11774-bin-ubuntu-cuda-12.8-x64.tar.gz"]=="7d03c8482b62c9533d47e777c0d3ca2edce6e57916b51f587a4576d332757fbb"
           assert assets["cudart-llama-b11774-bin-ubuntu-cuda-12.8-x64.tar.gz"]=="d4fe9a68a521add2001396fdc324dcc613104a2e7a175b68823448793bf8eb9f"
+          from pathlib import Path
+          assert module.recognize_generated_canary("Маяк.".encode("utf-8"))[0]
+          assert module.recognize_generated_canary(b"The answer is lighthouse.")[0]
+          assert not module.recognize_generated_canary(b"")[0]
+          assert not module.recognize_generated_canary(b"llama_perf_context_print: eval time = 99 ms / 1 runs")[0]
+          assert not module.recognize_generated_canary("Как называется башня с огнём?".encode("utf-8"))[0]
+          argv=module.canary_command(Path("/tmp/llama-completion"),Path("/tmp/pinned.gguf"))
+          assert argv[0]=="/tmp/llama-completion"
+          assert all(flag in argv for flag in ("--jinja","--single-turn","--simple-io","--no-display-prompt"))
+          assert "--no-conversation" not in argv
           print("PASS_GPU8_RUNNER_STATIC_GUARD")
           PY
       - name: Require existing AVRORA Google Colab ADC; do not reauthorize
