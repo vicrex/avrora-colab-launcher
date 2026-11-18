@@ -231,6 +231,14 @@ def summary_only(work,process_rc):
                 cleaned.append(name)
         output["psyai_last_stage"]=cleaned[-1] if cleaned else "UNKNOWN"
         output["psyai_stage_count"]=len(cleaned)
+    raw_stats=item.get("generation_progress")
+    if isinstance(raw_stats,dict):
+        # Only bounded numbers, never stage prompts, responses or text.
+        for key in ("model_calls","cache_hits","retries","input_tokens",
+                    "output_tokens","prefill_seconds","decode_seconds"):
+            value=raw_stats.get(key)
+            if type(value) in (int,float) and 0<=value<=100_000_000:
+                output[key]=value
     checks=item.get("verification") or {}
     if isinstance(checks,dict):
         output["automated_checks_pass"]=checks.get("automated_checks_pass") is True
