@@ -61,6 +61,16 @@ def main():
         assert bridge.safe_gpu_allocation_reason(logfile)=="COLAB_GPU_ASSIGNMENT_REJECTED"
         logfile.write_text("Internal remote Python error",encoding="utf-8")
         assert bridge.safe_gpu_allocation_reason(logfile)=="OTHER_FAILURE"
+    # Verify a bounded failure code reaches the public receipt without
+    # accidentally exposing arbitrary human text from the private runtime.
+    import types
+    remote_spec=importlib.util.spec_from_file_location("case34_remote_template",REMOTE)
+    # The templated module is syntax checked above; inspect source because its
+    # mandatory secret placeholders are deliberately unavailable in offline CI.
+    remote_text=REMOTE.read_text("utf-8")
+    assert 'output["reason_code"]=code' in remote_text
+    assert 're.fullmatch(r"[A-Z][A-Z0-9_]{2,80}",code)' in remote_text
+    assert '"reason_code"' in RUNNER.read_text("utf-8")
     # Never print the injected source, helper or synthetic payload to CI logs.
     print("PASS_CASE34_COLAB_FULL_ARCHIVE_SHA_SYNTHETIC_REMOTE_SYNTAX")
     print("PASS_CASE34_COLAB_PRIVATE_FILES_FILTERED_COUNT_GT_100")
