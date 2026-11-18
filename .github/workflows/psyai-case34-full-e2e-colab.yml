@@ -8,6 +8,7 @@ on:
     paths:
       - '.github/psyai-case34-full-once-20261118.marker'
       - '.github/psyai-case34-full-retry-cli312-20261118.marker'
+      - '.github/psyai-case34-full-retry-deps0221-20261118.marker'
 
 permissions:
   contents: read
@@ -81,6 +82,30 @@ jobs:
         run: |
           set +x
           python -u tools/psyai_case34_full_colab_bridge.py
+
+      - name: Finalize independent integrity hash of sanitized runner receipt
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          python -B - <<'PY'
+          import hashlib,json,pathlib
+          p=pathlib.Path("psyai_case34_full_proof.json")
+          if not p.is_file():
+              print("CASE34_NO_SAFE_RECEIPT_TO_SIGN")
+              raise SystemExit(0)
+          result=json.loads(p.read_text(encoding="ascii"))
+          assert result.get("schema")=="PSYAI_CASE34_FULL_COLAB_V1"
+          assert result.get("source_published") is False
+          result.pop("receipt_sha256",None)
+          canonical=json.dumps(result,sort_keys=True,separators=(",",":"),ensure_ascii=True)
+          result["receipt_sha256"]=hashlib.sha256(canonical.encode("ascii")).hexdigest()
+          p.write_text(json.dumps(result,sort_keys=True,separators=(",",":"),ensure_ascii=True)+"\n",encoding="ascii")
+          back=json.loads(p.read_text(encoding="ascii"))
+          signed=back.pop("receipt_sha256")
+          check=json.dumps(back,sort_keys=True,separators=(",",":"),ensure_ascii=True)
+          assert signed==hashlib.sha256(check.encode("ascii")).hexdigest()
+          print("PASS_CASE34_PUBLIC_RECEIPT_FINAL_SHA256_INDEPENDENT")
+          PY
 
       - name: Publish ONLY sanitized remote SHA-bound source/quality/time receipt
         if: ${{ always() }}
