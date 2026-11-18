@@ -53,7 +53,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vicrex/PSYAI_PROFESSIONAL
-          ref: c630920b8d39b25e3a2d399913b5f39f38faeeb1
+          ref: ecd19958919541d5985a86c66152c0b880ac0c82
           path: private_psyai
           fetch-depth: 1
           persist-credentials: false
@@ -65,7 +65,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C private_psyai rev-parse HEAD)" = "c630920b8d39b25e3a2d399913b5f39f38faeeb1"
+          test "$(git -C private_psyai rev-parse HEAD)" = "ecd19958919541d5985a86c66152c0b880ac0c82"
           python -B - <<'PY'
           from pathlib import Path
           f=Path("private_psyai/tools/case34_private_secret_preflight.py")
