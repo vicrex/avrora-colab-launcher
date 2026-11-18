@@ -209,6 +209,28 @@ def summary_only(work,process_rc):
             "real_gemma":item.get("real_gemma") is True,
             "performance":item.get("performance") if item.get("performance") in enums else "UNVERIFIED",
             "quality":item.get("quality") if item.get("quality") in enums else "UNVERIFIED"}
+    # The PRIVATE CASE34 driver records a bounded internal failure code,
+    # but earlier public receipts silently discarded it. Keep ONLY strict
+    # constant-like identifiers, never exception prose, source, client data.
+    code=item.get("failure_code")
+    if isinstance(code,str) and re.fullmatch(r"[A-Z][A-Z0-9_]{2,80}",code):
+        output["reason_code"]=code
+    else:
+        fail_type=item.get("failure_type")
+        if isinstance(fail_type,str) and re.fullmatch(r"[A-Za-z]{3,50}",fail_type):
+            output["reason_code"]="PRIVATE_DRIVER_"+fail_type.upper()
+    # Stage names are developer-owned constant identifiers; never include
+    # timings/details that might contain model output or dialogue content.
+    private_stages=item.get("stages") or []
+    if isinstance(private_stages,list):
+        cleaned=[]
+        for row in private_stages[:40]:
+            if not isinstance(row,dict):continue
+            name=row.get("name")
+            if isinstance(name,str) and re.fullmatch(r"[A-Z][A-Z0-9_]{2,65}",name):
+                cleaned.append(name)
+        output["psyai_last_stage"]=cleaned[-1] if cleaned else "UNKNOWN"
+        output["psyai_stage_count"]=len(cleaned)
     checks=item.get("verification") or {}
     if isinstance(checks,dict):
         output["automated_checks_pass"]=checks.get("automated_checks_pass") is True
