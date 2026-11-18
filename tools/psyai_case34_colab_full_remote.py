@@ -343,7 +343,20 @@ def main():
                         process.terminate()
                         try:process.wait(timeout=8)
                         except subprocess.TimeoutExpired:process.kill()
+                # Inspect only allowlisted safe codes, never release the raw
+                # app stdout, patient transcript, prompt or stack trace.
+                diagnostic.seek(0)
+                bounded=diagnostic.read()[-32768:].decode("utf-8","replace")
+                safe_match=re.search(r"(?m)^CASE34_SAFE_FAILURE_CODE=([A-Z0-9_]{3,90})\\s*$",bounded)
+                private_safe_code=safe_match.group(1) if safe_match else None
+                if private_safe_code is None and "ModuleNotFoundError:" in bounded:
+                    private_safe_code="ERROR_MODULENOTFOUNDERROR"
+                if private_safe_code is None and "AttributeError:" in bounded:
+                    private_safe_code="ERROR_ATTRIBUTEERROR"
             proof.update(summary_only(work,rc))
+            if (proof.get("result_receipt")=="MISSING" and private_safe_code
+                    and re.fullmatch(r"[A-Z0-9_]{3,90}",private_safe_code)):
+                proof["reason_code"]=private_safe_code
             proof["model_started"]=proof.get("real_gemma") is True
             proof["full_case34"]=bool(proof.get("real_gemma"))
             proof["execution_exit_code"]=int(rc)
