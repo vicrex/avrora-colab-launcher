@@ -14,6 +14,8 @@ import sys
 import threading
 import time
 
+from psyai_gpu8_status import GitHubStatusJournal
+
 STAGE="PSYAI_GPU8_STAGE="
 RECEIPT="PSYAI_GPU8_COLAB_RECEIPT="
 PROOF_PATH=Path("psyai_gpu8_proof.json")
@@ -56,8 +58,25 @@ def main():
     timer=None
     timed_out=False
     rc=None
+    journal=GitHubStatusJournal()
+    phase=["waiting_for_colab_output"]
+    heartbeat_stop=threading.Event()
+    heartbeat_thread=None
     print("PSYAI_GPU8_BRIDGE_STARTED",flush=True)
     try:
+        # Do not launch an expensive cloud job unless independent progress
+        # reporting is available. GitHub Actions logs may be inaccessible.
+        if not journal.heartbeat(0,phase[0]):
+            proof["status"]="STATUS_JOURNAL_UNAVAILABLE"
+            raise RuntimeError("STATUS_JOURNAL_UNAVAILABLE")
+        print("PSYAI_GPU8_JOURNAL_READY",flush=True)
+
+        def report_heartbeat():
+            while not heartbeat_stop.wait(60):
+                journal.heartbeat(time.monotonic()-started,phase[0])
+        heartbeat_thread=threading.Thread(target=report_heartbeat,daemon=True)
+        heartbeat_thread.start()
+
         proc=subprocess.Popen(cli,stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT,text=True,
                               errors="replace",bufsize=1)
@@ -91,6 +110,8 @@ def main():
                         if code.replace("_","").isalnum() and code.isupper() and len(code)<90:
                             sanitized["reason_code"]=code
                     proof["stages"].append(sanitized)
+                    phase[0]=name
+                    journal.stage(name,state,sanitized.get("elapsed_seconds"))
                     print("PSYAI_GPU8_STAGE="+canonical(sanitized),flush=True)
                 except (ValueError,TypeError,KeyError):
                     pass
@@ -116,10 +137,26 @@ def main():
         else:
             proof["status"]=classify_cli("\n".join(snippets))
     except (OSError,ValueError,RuntimeError) as exc:
-        proof["status"]="COLAB_CLI_LAUNCH_FAILED"
+        if proof["status"]!="STATUS_JOURNAL_UNAVAILABLE":
+            proof["status"]="COLAB_CLI_LAUNCH_FAILED"
         proof["error_type"]=type(exc).__name__
     finally:
+        heartbeat_stop.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=9)
         if timer is not None:timer.cancel()
+        success=rc==0 and proof["status"]=="GPU8_MODEL_PREFLIGHT_PASS"
+        terminal_status_ok=journal.finish(success,
+            "GPU8_MODEL_PREFLIGHT_PASS" if success else proof["status"])
+        proof["journal"]={
+            "initial_heartbeat_verified":True if journal.accepted>0 else False,
+            "statuses_accepted":journal.accepted,
+            "statuses_failed":journal.rejected,
+            "final_status_published":terminal_status_ok,
+            "last_error_code":journal.last_error
+        }
+        if not terminal_status_ok and success:
+            proof["status"]="STATUS_JOURNAL_TERMINAL_FAILED"
         proof["cli_exit_code"]=rc
         proof["elapsed_seconds"]=round(time.monotonic()-started,2)
         PROOF_PATH.write_text(json.dumps(proof,indent=2,ensure_ascii=True)+"\n",
