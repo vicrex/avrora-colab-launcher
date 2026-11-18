@@ -58,11 +58,11 @@ def private_source_archive():
                 p=PurePosixPath(m.name)
                 if p.is_absolute() or ".." in p.parts or not (m.isdir() or m.isfile()):
                     raise ValueError("UNSAFE_PRIVATE_ARCHIVE_ENTRY")
+                if p.parts[0] in DROPPED_TOP:
+                    continue
                 name=p.name.lower()
                 if name in FORBIDDEN_NAMES or any(name.endswith(s) for s in FORBIDDEN_SUFFIX):
                     raise ValueError("FORBIDDEN_PRIVATE_ARCHIVE_CONTENT")
-                if p.parts[0] in DROPPED_TOP:
-                    continue
                 if m.isdir():
                     out.addfile(m)
                 else:
